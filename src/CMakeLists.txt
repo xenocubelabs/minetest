@@ -275,11 +275,11 @@ if(WIN32)
 	endif()
 else()
 	# Unix probably
-	if(BUILD_CLIENT)
-		if(NOT HAIKU AND NOT APPLE)
-			find_package(X11 REQUIRED)
-		endif(NOT HAIKU AND NOT APPLE)
-	endif()
+	#if(BUILD_CLIENT)
+#		if(NOT HAIKU AND NOT APPLE)
+#			find_package(X11 REQUIRED)
+#		endif(NOT HAIKU AND NOT APPLE)
+#	endif()
 
 	set(PLATFORM_LIBS -lpthread ${CMAKE_DL_LIBS})
 	if(APPLE)
@@ -364,6 +364,7 @@ set(common_SRCS
 	light.cpp
 	log.cpp
 	main.cpp
+	mainloop.cpp
 	map.cpp
 	map_settings_manager.cpp
 	mapblock.cpp
@@ -498,7 +499,6 @@ if(BUILD_CLIENT)
 	include_directories(SYSTEM
 		${FREETYPE_INCLUDE_DIRS}
 		${SOUND_INCLUDE_DIRS}
-		${X11_INCLUDE_DIR}
 	)
 endif()
 
@@ -514,6 +514,7 @@ if(NOT CMAKE_CROSSCOMPILING)
 endif()
 
 if(BUILD_CLIENT)
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --oformat=html --preload-file /home/mtuser/MT/fsroot@/")
 	add_executable(${PROJECT_NAME} ${client_SRCS} ${extra_windows_SRCS})
 	add_dependencies(${PROJECT_NAME} GenerateVersion)
 	target_link_libraries(
@@ -521,7 +522,6 @@ if(BUILD_CLIENT)
 		${ZLIB_LIBRARIES}
 		IrrlichtMt::IrrlichtMt
 		${ZSTD_LIBRARY}
-		${X11_LIBRARIES}
 		${SOUND_LIBRARIES}
 		${SQLITE3_LIBRARY}
 		${LUA_LIBRARY}

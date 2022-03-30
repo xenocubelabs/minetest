@@ -23,6 +23,19 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <string>
 
 
+#define COPY_MECHANISM(clsname) \
+	virtual BaseException* copy() { \
+		return new clsname(*this); \
+	} \
+	virtual void reraise() { \
+		try { \
+			throw *this; \
+		} catch (clsname &exc) { \
+			delete this; \
+			throw; \
+		} \
+	}
+
 class BaseException : public std::exception
 {
 public:
@@ -33,6 +46,8 @@ public:
 	{
 		return m_s.c_str();
 	}
+
+	COPY_MECHANISM(BaseException);
 protected:
 	std::string m_s;
 };
@@ -40,61 +55,73 @@ protected:
 class AlreadyExistsException : public BaseException {
 public:
 	AlreadyExistsException(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(AlreadyExistsException);
 };
 
 class VersionMismatchException : public BaseException {
 public:
 	VersionMismatchException(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(VersionMismatchException);
 };
 
 class FileNotGoodException : public BaseException {
 public:
 	FileNotGoodException(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(FileNotGoodException);
 };
 
 class DatabaseException : public BaseException {
 public:
 	DatabaseException(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(DatabaseException);
 };
 
 class SerializationError : public BaseException {
 public:
 	SerializationError(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(SerializationError);
 };
 
 class PacketError : public BaseException {
 public:
 	PacketError(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(PacketError);
 };
 
 class SettingNotFoundException : public BaseException {
 public:
 	SettingNotFoundException(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(SettingNotFoundException);
 };
 
 class ItemNotFoundException : public BaseException {
 public:
 	ItemNotFoundException(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(ItemNotFoundException);
 };
 
 class ServerError : public BaseException {
 public:
 	ServerError(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(ServerError);
 };
 
 class ClientStateError : public BaseException {
 public:
 	ClientStateError(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(ClientStateError);
 };
 
 class PrngException : public BaseException {
 public:
 	PrngException(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(PrngException);
 };
 
 class ModError : public BaseException {
 public:
 	ModError(const std::string &s): BaseException(s) {}
+	COPY_MECHANISM(ModError);
 };
 
 
@@ -112,6 +139,9 @@ public:
 	InvalidNoiseParamsException(const std::string &s):
 		BaseException(s)
 	{}
+
+	COPY_MECHANISM(InvalidNoiseParamsException);
+
 };
 
 class InvalidPositionException : public BaseException
@@ -123,4 +153,7 @@ public:
 	InvalidPositionException(const std::string &s):
 		BaseException(s)
 	{}
+
+	COPY_MECHANISM(InvalidPositionException);
+
 };

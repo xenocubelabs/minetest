@@ -630,7 +630,8 @@ ShaderInfo ShaderSource::generateShader(const std::string &name,
 	// Create shaders header
 	bool use_gles = false;
 #if ENABLE_GLES
-	use_gles = driver->getDriverType() == video::EDT_OGLES2;
+	use_gles = (driver->getDriverType() == video::EDT_OGLES2 ||
+	            driver->getDriverType() == video::EDT_WEBGL1);
 #endif
 	std::stringstream shaders_header;
 	shaders_header

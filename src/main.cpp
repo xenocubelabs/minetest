@@ -17,6 +17,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
+#include <emscripten/html5.h>
+
+#include "mainloop.h"
 #include "irrlichttypes.h" // must be included before anything irrlicht, see comment in the file
 #include "irrlicht.h" // createDevice
 #include "irrlichttypes_extrabloated.h"
@@ -127,22 +130,22 @@ FileLogOutput file_log_output;
 
 static OptionList allowed_options;
 
-int main(int argc, char *argv[])
-{
-	int retval;
+ClientLauncher *client_launcher;
+
+void main2(int argc, char *argv[], std::function<void(int)> resolve) {
 	debug_set_exception_handler();
 
 	g_logger.registerThread("Main");
 	g_logger.addOutputMaxLevel(&stderr_output, LL_ACTION);
 
-	Settings cmd_args;
+	Settings &cmd_args = *(new Settings()); // LEAK
 	bool cmd_args_ok = get_cmdline_opts(argc, argv, &cmd_args);
 	if (!cmd_args_ok
 			|| cmd_args.getFlag("help")
 			|| cmd_args.exists("nonopt1")) {
 		porting::attachOrCreateConsole();
 		print_help(allowed_options);
-		return cmd_args_ok ? 0 : 1;
+		resolve(cmd_args_ok ? 0 : 1); return;
 	}
 	if (cmd_args.getFlag("console"))
 		porting::attachOrCreateConsole();
@@ -150,11 +153,12 @@ int main(int argc, char *argv[])
 	if (cmd_args.getFlag("version")) {
 		porting::attachOrCreateConsole();
 		print_version();
-		return 0;
+		resolve(0); return;
 	}
 
-	if (!setup_log_params(cmd_args))
-		return 1;
+	if (!setup_log_params(cmd_args)) {
+		resolve(1); return;
+	}
 
 	porting::signal_handler_init();
 
@@ -167,16 +171,16 @@ int main(int argc, char *argv[])
 
 	if (!create_userdata_path()) {
 		errorstream << "Cannot create user data directory" << std::endl;
-		return 1;
+		resolve(1); return;
 	}
 
 	// Debug handler
-	BEGIN_DEBUG_EXCEPTION_HANDLER
+	//BEGIN_DEBUG_EXCEPTION_HANDLER
 
 	// List gameids if requested
 	if (cmd_args.exists("gameid") && cmd_args.get("gameid") == "list") {
 		list_game_ids();
-		return 0;
+		resolve(0); return;
 	}
 
 	// List worlds, world names, and world paths if requested
@@ -190,13 +194,14 @@ int main(int argc, char *argv[])
 		} else {
 			errorstream << "Invalid --worldlist value: "
 				<< cmd_args.get("worldlist") << std::endl;
-			return 1;
+			resolve(1); return;
 		}
-		return 0;
+		resolve(0); return;
 	}
 
-	if (!init_common(cmd_args, argc, argv))
-		return 1;
+	if (!init_common(cmd_args, argc, argv)) {
+		resolve(1); return;
+	}
 
 	if (g_settings->getBool("enable_console"))
 		porting::attachOrCreateConsole();
@@ -205,12 +210,12 @@ int main(int argc, char *argv[])
 	// Run unit tests
 	if (cmd_args.getFlag("run-unittests")) {
 #if BUILD_UNITTESTS
-		return run_tests();
+		resolve(run_tests()); return;
 #else
 		errorstream << "Unittest support is not enabled in this binary. "
 			<< "If you want to enable it, compile project with BUILD_UNITTESTS=1 flag."
 			<< std::endl;
-		return 1;
+		resolve(1); return;
 #endif
 	}
 
@@ -227,7 +232,8 @@ int main(int argc, char *argv[])
 	}
 #endif // __ANDROID__
 
-	GameStartData game_params;
+	// LEAK
+	GameStartData &game_params = *(new GameStartData());
 #ifdef SERVER
 	porting::attachOrCreateConsole();
 	game_params.is_dedicated_server = true;
@@ -238,31 +244,35 @@ int main(int argc, char *argv[])
 	game_params.is_dedicated_server = isServer;
 #endif
 
-	if (!game_configure(&game_params, cmd_args))
-		return 1;
+	if (!game_configure(&game_params, cmd_args)) {
+		resolve(1); return;
+	}
 
 	sanity_check(!game_params.world_path.empty());
 
-	if (game_params.is_dedicated_server)
-		return run_dedicated_server(game_params, cmd_args) ? 0 : 1;
+	if (game_params.is_dedicated_server) {
+		resolve(run_dedicated_server(game_params, cmd_args) ? 0 : 1);
+		return;
+	}
 
 #ifndef SERVER
-	retval = ClientLauncher().run(game_params, cmd_args) ? 0 : 1;
+	std::cout << "Creating ClientLauncher" << std::endl;
+	client_launcher = new ClientLauncher(game_params, cmd_args);
+	std::cout << "Calling ClientLauncher::run" << std::endl;
+        client_launcher->run([resolve](bool result) {
+		// Update configuration file
+		if (!g_settings_path.empty())
+			g_settings->updateConfigFile(g_settings_path.c_str());
+
+		print_modified_quicktune_values();
+
+		//END_DEBUG_EXCEPTION_HANDLER
+		resolve(result ? 0 : 1);
+	});
 #else
-	retval = 0;
+	resolve(0);
 #endif
-
-	// Update configuration file
-	if (!g_settings_path.empty())
-		g_settings->updateConfigFile(g_settings_path.c_str());
-
-	print_modified_quicktune_values();
-
-	END_DEBUG_EXCEPTION_HANDLER
-
-	return retval;
 }
-
 
 /*****************************************************************************
  * Startup / Init

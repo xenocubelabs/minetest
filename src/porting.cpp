@@ -374,6 +374,15 @@ bool getCurrentExecPath(char *buf, size_t len)
 	return true;
 }
 
+#elif defined(__EMSCRIPTEN__)
+
+bool getCurrentExecPath(char *buf, size_t len)
+{
+  const char *hardcoded_path = "/minetest/bin/minetest.exe";
+  strncpy(buf, hardcoded_path, len);
+  return true;
+}
+
 
 #else
 
@@ -746,8 +755,9 @@ static bool open_uri(const std::string &uri)
 	return posix_spawnp(NULL, "open", NULL, NULL, (char**)argv,
 		(*_NSGetEnviron())) == 0;
 #else
-	const char *argv[] = {"xdg-open", uri.c_str(), NULL};
-	return posix_spawnp(NULL, "xdg-open", NULL, NULL, (char**)argv, environ) == 0;
+	//const char *argv[] = {"xdg-open", uri.c_str(), NULL};
+	//return posix_spawnp(NULL, "xdg-open", NULL, NULL, (char**)argv, environ) == 0;
+	return true;
 #endif
 }
 
