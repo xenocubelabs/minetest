@@ -3,6 +3,7 @@
 #include <emscripten/html5.h>
 #include <cassert>
 #include <iostream>
+#include <emsocketctl.h>
 
 extern "C" {
 	EMSCRIPTEN_KEEPALIVE
@@ -56,6 +57,8 @@ void mainloop_play(void) {
 
 void MainLoop::init() {
 	mainThreadId = pthread_self();
+	emsocket_init();
+	emsocket_set_proxy("wss://minetest.dustlabs.io/proxy");
 }
 
 void MainLoop::run_forever() {
