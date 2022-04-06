@@ -33,6 +33,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "debug.h"
 #include "settings.h"
 #include "log.h"
+#include <emsocket.h>
 
 #ifdef _WIN32
 // Without this some of the network functions are not found on mingw

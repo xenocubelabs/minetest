@@ -349,7 +349,7 @@ void set_default_settings()
 #endif
 
 	// Network
-	settings->setDefault("enable_ipv6", "true");
+	settings->setDefault("enable_ipv6", "false"); // TODO: enable this
 	settings->setDefault("ipv6_server", "false");
 	settings->setDefault("max_packets_per_iteration","1024");
 	settings->setDefault("port", "30000");
