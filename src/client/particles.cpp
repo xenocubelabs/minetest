@@ -71,13 +71,23 @@ Particle::Particle(
 	m_gamedef = gamedef;
 	m_env = env;
 
+	// Mesh Buffer
+	m_meshbuffer = new scene::SMeshBuffer();
+	core::array<u16>& Indices = m_meshbuffer->Indices;
+	Indices.set_used(6);
+	u16 indices[] = {0,1,2, 2,3,0};
+	for (int i = 0; i < 6; i++) {
+		Indices[i] = indices[i];
+	}
+
 	// Texture
-	m_material.setFlag(video::EMF_LIGHTING, false);
-	m_material.setFlag(video::EMF_BACK_FACE_CULLING, false);
-	m_material.setFlag(video::EMF_BILINEAR_FILTER, false);
-	m_material.setFlag(video::EMF_FOG_ENABLE, true);
-	m_material.MaterialType = video::EMT_TRANSPARENT_ALPHA_CHANNEL;
-	m_material.setTexture(0, texture);
+	video::SMaterial& mat = m_meshbuffer->getMaterial();
+	mat.setFlag(video::EMF_LIGHTING, false);
+	mat.setFlag(video::EMF_BACK_FACE_CULLING, false);
+	mat.setFlag(video::EMF_BILINEAR_FILTER, false);
+	mat.setFlag(video::EMF_FOG_ENABLE, true);
+	mat.MaterialType = video::EMT_TRANSPARENT_ALPHA_CHANNEL;
+	mat.setTexture(0, texture);
 	m_texpos = texpos;
 	m_texsize = texsize;
 	m_animation = p.animation;
@@ -111,6 +121,10 @@ Particle::Particle(
 	updateVertices();
 }
 
+Particle::~Particle() {
+	m_meshbuffer->drop();
+}
+
 void Particle::OnRegisterSceneNode()
 {
 	if (IsVisible)
@@ -122,13 +136,10 @@ void Particle::OnRegisterSceneNode()
 void Particle::render()
 {
 	video::IVideoDriver *driver = SceneManager->getVideoDriver();
-	driver->setMaterial(m_material);
+	driver->setMaterial(m_meshbuffer->getMaterial());
 	driver->setTransform(video::ETS_WORLD, AbsoluteTransformation);
-
-	u16 indices[] = {0,1,2, 2,3,0};
-	driver->drawVertexPrimitiveList(m_vertices, 4,
-			indices, 2, video::EVT_STANDARD,
-			scene::EPT_TRIANGLES, video::EIT_16BIT);
+	m_meshbuffer->setDirty();
+	driver->drawMeshBuffer(m_meshbuffer);
 }
 
 void Particle::step(float dtime)
@@ -156,7 +167,7 @@ void Particle::step(float dtime)
 		m_animation_time += dtime;
 		int frame_length_i, frame_count;
 		m_animation.determineParams(
-				m_material.getTexture(0)->getSize(),
+				m_meshbuffer->getMaterial().getTexture(0)->getSize(),
 				&frame_count, &frame_length_i, NULL);
 		float frame_length = frame_length_i / 1000.0;
 		while (m_animation_time > frame_length) {
@@ -200,7 +211,7 @@ void Particle::updateVertices()
 	f32 tx0, tx1, ty0, ty1;
 
 	if (m_animation.type != TAT_NONE) {
-		const v2u32 texsize = m_material.getTexture(0)->getSize();
+		const v2u32 texsize = m_meshbuffer->getMaterial().getTexture(0)->getSize();
 		v2f texcoord, framesize_f;
 		v2u32 framesize;
 		texcoord = m_animation.getTextureCoords(texsize, m_animation_frame);
@@ -218,17 +229,20 @@ void Particle::updateVertices()
 		ty1 = m_texpos.Y + m_texsize.Y;
 	}
 
-	m_vertices[0] = video::S3DVertex(-m_size / 2, -m_size / 2,
+	core::array<video::S3DVertex>& Vertices = m_meshbuffer->Vertices;
+	Vertices.set_used(4);
+	Vertices[0] = video::S3DVertex(-m_size / 2, -m_size / 2,
 		0, 0, 0, 0, m_color, tx0, ty1);
-	m_vertices[1] = video::S3DVertex(m_size / 2, -m_size / 2,
+	Vertices[1] = video::S3DVertex(m_size / 2, -m_size / 2,
 		0, 0, 0, 0, m_color, tx1, ty1);
-	m_vertices[2] = video::S3DVertex(m_size / 2, m_size / 2,
+	Vertices[2] = video::S3DVertex(m_size / 2, m_size / 2,
 		0, 0, 0, 0, m_color, tx1, ty0);
-	m_vertices[3] = video::S3DVertex(-m_size / 2, m_size / 2,
+	Vertices[3] = video::S3DVertex(-m_size / 2, m_size / 2,
 		0, 0, 0, 0, m_color, tx0, ty0);
 
 	v3s16 camera_offset = m_env->getCameraOffset();
-	for (video::S3DVertex &vertex : m_vertices) {
+	for (int i = 0; i < 4; i++) {
+		video::S3DVertex &vertex = Vertices[i];
 		if (m_vertical) {
 			v3f ppos = m_player->getPosition()/BS;
 			vertex.Pos.rotateXZBy(std::atan2(ppos.Z - m_pos.Z, ppos.X - m_pos.X) /

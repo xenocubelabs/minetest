@@ -44,7 +44,7 @@ class Particle : public scene::ISceneNode
 		v2f texsize,
 		video::SColor color
 	);
-	~Particle() = default;
+	~Particle();
 
 	virtual const aabb3f &getBoundingBox() const
 	{
@@ -58,7 +58,7 @@ class Particle : public scene::ISceneNode
 
 	virtual video::SMaterial& getMaterial(u32 i)
 	{
-		return m_material;
+		return m_meshbuffer->getMaterial();
 	}
 
 	virtual void OnRegisterSceneNode();
@@ -73,7 +73,6 @@ private:
 	void updateLight();
 	void updateVertices();
 
-	video::S3DVertex m_vertices[4];
 	float m_time = 0.0f;
 	float m_expiration;
 
@@ -81,7 +80,7 @@ private:
 	IGameDef *m_gamedef;
 	aabb3f m_box;
 	aabb3f m_collisionbox;
-	video::SMaterial m_material;
+	scene::SMeshBuffer *m_meshbuffer;
 	v2f m_texpos;
 	v2f m_texsize;
 	v3f m_pos;
