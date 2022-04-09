@@ -140,7 +140,6 @@ GUIEngine::GUIEngine(JoystickController *joystick,
 	m_data(data),
 	m_kill(kill)
 {
-	std::cout << "ENTERED GUIEngine" << std::endl;
 	//initialize texture pointers
 	for (image_definition &texture : m_textures) {
 		texture.texture = NULL;
@@ -193,7 +192,6 @@ GUIEngine::GUIEngine(JoystickController *joystick,
 
 	// Initialize scripting
 
-	std::cout << "ABOUT TO Initializing LUA" << std::endl;
 	infostream << "GUIEngine: Initializing Lua" << std::endl;
 
 	m_script = new MainMenuScripting(this);
@@ -211,7 +209,6 @@ GUIEngine::GUIEngine(JoystickController *joystick,
 		m_data->script_data.errormessage = e.what();
 	}
 
-	std::cout << "CallingGuiEngine::Run" << std::endl;
 	run([this, resolve]() {
 		m_menu->quitMenu();
 		m_menu->drop();
@@ -247,14 +244,11 @@ bool GUIEngine::loadMainMenuScript()
 /******************************************************************************/
 void GUIEngine::run(std::function<void()> resolve)
 {
-	std::cout << "ENTERED GUIEngine::run" << std::endl;
-
 	// Always create clouds because they may or may not be
 	// needed based on the game selected
 	driver = m_rendering_engine->get_video_driver();
 
 	cloudInit();
-	std::cout << "AFTER cloudInit" << std::endl;
 
 	text_height = g_fontengine->getTextHeight();
 
@@ -282,7 +276,6 @@ void GUIEngine::run(std::function<void()> resolve)
 }
 
 void GUIEngine::run_loop(std::function<void()> resolve) {
-	//std::cout << "ENTERED GUIEngine::run_loop" << std::endl;
 	// EXTRANEOUS INDENT
 		bool keep_going = m_rendering_engine->run() && (!m_startgame) && (!m_kill);
 		if (!keep_going) {

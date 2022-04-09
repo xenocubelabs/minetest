@@ -107,7 +107,6 @@ ClientLauncher::~ClientLauncher()
 
 void ClientLauncher::run(std::function<void(bool)> resolve)
 {
-	std::cout << "IN ClientLauncher::run" << std::endl;
 	/* This function is called when a client must be started.
 	 * Covered cases:
 	 *   - Singleplayer (address but map provided)
@@ -230,7 +229,6 @@ void ClientLauncher::run(std::function<void(bool)> resolve)
 }
 
 void ClientLauncher::run_loop(std::function<void(bool)> resolve) {
-	std::cout << "IN ClientLauncher::run_loop" << std::endl;
 	// EXTRANEOUS INDENT
 		bool keep_running = m_rendering_engine->run() && !*kill && !g_gamecallback->shutdown_requested;
 		if (!keep_running) {
@@ -261,7 +259,6 @@ void ClientLauncher::run_loop(std::function<void(bool)> resolve) {
 }
 
 void ClientLauncher::run_after_launch_game(std::function<void(bool)> resolve, bool game_has_run) {
-	std::cout << "IN ClientLauncher::run_after_launch_game" << std::endl;
 
 	// EXTRANEOUS INDENT
 			// Reset the reconnect_requested flag
@@ -313,7 +310,6 @@ void ClientLauncher::run_after_launch_game(std::function<void(bool)> resolve, bo
 }
 
 void ClientLauncher::after_the_game(std::function<void(bool)> resolve) {
-	std::cout << "IN ClientLauncher::after_the_game" << std::endl;
 	// EXTRANEOUS INDENT
 					// AFTER TRY
 					m_rendering_engine->get_scene_manager()->clear();
@@ -338,7 +334,6 @@ void ClientLauncher::after_the_game(std::function<void(bool)> resolve) {
 }
 
 void ClientLauncher::run_cleanup(std::function<void(bool)> resolve) {
-	std::cout << "IN ClientLauncher::run_cleanup" << std::endl;
 	g_menuclouds->drop();
         g_menucloudsmgr->drop();
 	resolve(retval);
@@ -404,7 +399,6 @@ void ClientLauncher::init_input()
 
 void ClientLauncher::launch_game(std::function<void(bool)> resolve)
 {
-	std::cout << "IN ClientLauncher::launch_game" << std::endl;
 	// Prepare and check the start data to launch a game
 	std::string error_message_lua = error_message;
 	error_message.clear();
@@ -464,7 +458,6 @@ void ClientLauncher::launch_game(std::function<void(bool)> resolve)
 }
 
 void ClientLauncher::after_main_menu(std::function<void(bool)> resolve) {
-	std::cout << "IN ClientLauncher::after_main_menu" << std::endl;
 	if (!skip_main_menu) {
 		MainMenuData &menudata = *menudata_addr;
 
@@ -586,14 +579,11 @@ void ClientLauncher::after_main_menu(std::function<void(bool)> resolve) {
 
 void ClientLauncher::main_menu(std::function<void()> resolve)
 {
-	std::cout << "IN ClientLauncher::main_menu" << std::endl;
 	infostream << "Waiting for other menus" << std::endl;
 	main_menu_loop(resolve);
 }
 
 void ClientLauncher::main_menu_loop(std::function<void()> resolve) {
-	std::cout << "IN ClientLauncher::main_menu_loop" << std::endl;
-
 	// EXTRANEOUS INDENT
 		bool keep_going = m_rendering_engine->run() && !*kill;
 		if (!keep_going || !isMenuActive()) {
@@ -610,8 +600,6 @@ void ClientLauncher::main_menu_loop(std::function<void()> resolve) {
 }
 
 void ClientLauncher::main_menu_after_loop(std::function<void()> resolve) {
-	std::cout << "IN ClientLauncher::main_menu_after_loop" << std::endl;
-
 	infostream << "Waited for other menus" << std::endl;
 
 	// Cursor can be non-visible when coming from the game
@@ -627,8 +615,6 @@ void ClientLauncher::main_menu_after_loop(std::function<void()> resolve) {
 }
 
 void ClientLauncher::main_menu_after_guiengine(std::function<void()> resolve) {
-	std::cout << "IN ClientLauncher::main_menu_after_guiengine" << std::endl;
-
 	/* leave scene manager in a clean state */
 	m_rendering_engine->get_scene_manager()->clear();
 	resolve();
