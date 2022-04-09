@@ -72,9 +72,14 @@ void MainLoop::next_frame(std::function<void()> resolve) {
 }
 
 void MainLoop::reenter_blessed() {
-  blessed = true;
-  reenter();
-  blessed = false;
+	// If we're already pointerlocked, there's no need to expedite main re-entry,
+	// and it may be better for performance to not do so. (prevent WebGL stalls)
+	if (havePointerLock) {
+		return;
+	}
+	blessed = true;
+	reenter();
+	blessed = false;
 }
 
 void MainLoop::reenter() {
