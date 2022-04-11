@@ -4,6 +4,8 @@
 #include <cassert>
 #include <iostream>
 #include <emsocketctl.h>
+#include <mutex>
+#include <condition_variable>
 
 extern "C" {
 	EMSCRIPTEN_KEEPALIVE
@@ -27,6 +29,10 @@ bool MainLoop::busy = false;
 int MainLoop::warned = 0;
 pthread_t MainLoop::mainThreadId;
 
+static pthread_t helperThread;
+static std::mutex helperMutex;
+static std::condition_variable helperCond;
+static AsyncPayload helperTask;
 
 static bool havePointerLock = false;
 EM_BOOL report_pointerlockchange(int eventType, const EmscriptenPointerlockChangeEvent *pointerlockChangeEvent, void *userData) {
@@ -55,8 +61,26 @@ void mainloop_play(void) {
 	MainLoop::play();
 }
 
+void* helper_thread_main(void*) {
+	std::unique_lock<std::mutex> ul(helperMutex);
+	for (;;) {
+		while (!helperTask) {
+			helperCond.wait(ul);
+		}
+		AsyncPayload task = std::move(helperTask);
+		helperTask = nullptr;
+		MainLoop::next_frame(task());
+	}
+}
+
 void MainLoop::init() {
 	mainThreadId = pthread_self();
+	// Launch async helper thread, used instead of the main thread during blocking network tasks.
+	int rc = pthread_create(&helperThread, NULL, helper_thread_main, NULL);
+	if (rc != 0) {
+		std::cerr << "MainLoop: Failed to launch helper thread" << std::endl;
+		abort();
+	}
 	emsocket_init();
 	emsocket_set_proxy("wss://minetest.dustlabs.io/proxy");
 }
@@ -64,6 +88,15 @@ void MainLoop::init() {
 void MainLoop::run_forever() {
         emscripten_set_main_loop(mainloop_reenter, 0, 1);
 	assert(0);
+}
+
+void MainLoop::RunAsyncThenResume(AsyncPayload payload) {
+	{
+		std::lock_guard<std::mutex> lock(helperMutex);
+		assert(!helperTask);
+		helperTask = payload;
+	}
+	helperCond.notify_all();
 }
 
 void MainLoop::next_frame(std::function<void()> resolve) {

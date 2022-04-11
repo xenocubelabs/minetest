@@ -579,7 +579,20 @@ local function get_screenshot(package)
 	return defaulttexturedir .. "loading_screenshot.png"
 end
 
-function store.load()
+function get_packages_full(url)
+	local http = core.get_http_api()
+	local response = http.fetch_sync({ url = url })
+	if not response.succeeded then
+		return {}
+	end
+	return core.parse_json(response.data) or {}
+end
+
+function store.load_async()
+	if store.loading then
+		return
+	end
+	store.loading = true
 	local version = core.get_version()
 	local base_url = core.settings:get("contentdb_url")
 	local url = base_url ..
@@ -592,13 +605,22 @@ function store.load()
 			url = url .. "&hide=" .. urlencode(item)
 		end
 	end
+	core.handle_async(
+		get_packages_full,
+		url,
+		function(result)
+			store.loading = nil
+			store.load(result)
+			store.update_paths()
+			store.sort_packages()
+			store.filter_packages(search_string)
+			core.event_handler("Refresh")
+		end
+	)
+end
 
-	local response = http.fetch_sync({ url = url })
-	if not response.succeeded then
-		return
-	end
-
-	store.packages_full = core.parse_json(response.data) or {}
+function store.load(packages_full)
+	store.packages_full = packages_full
 	store.aliases = {}
 
 	for _, package in pairs(store.packages_full) do
@@ -748,7 +770,7 @@ function store.get_formspec(dlgdata)
 	local W = 15.75
 	local H = 9.5
 	local formspec
-	if #store.packages_full > 0 then
+	if true then
 		formspec = {
 			"formspec_version[3]",
 			"size[15.75,9.5]",
@@ -810,8 +832,12 @@ function store.get_formspec(dlgdata)
 		end
 
 		if #store.packages == 0 then
+			local msg = "No results"
+			if #store.packages_full == 0 then
+				msg = "Loading...."
+			end
 			formspec[#formspec + 1] = "label[4,3;"
-			formspec[#formspec + 1] = fgettext("No results")
+			formspec[#formspec + 1] = fgettext(msg)
 			formspec[#formspec + 1] = "]"
 		end
 	else
@@ -1038,11 +1064,9 @@ end
 
 function create_store_dlg(type)
 	if not store.loaded or #store.packages_full == 0 then
-		store.load()
+		store.load_async()
 	end
 
-	store.update_paths()
-	store.sort_packages()
 
 	search_string = ""
 	cur_page = 1
@@ -1056,8 +1080,6 @@ function create_store_dlg(type)
 			end
 		end
 	end
-
-	store.filter_packages(search_string)
 
 	return dialog_create("store",
 			store.get_formspec,

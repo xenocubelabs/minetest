@@ -681,7 +681,10 @@ protected:
 	bool initGui();
 
 	// Client connection
+	Address connect_address;
+	bool local_server_mode = false;
 	void connectToServer(const GameStartData *start_data, std::function<void(bool,BaseException*)> resolve);
+	void connectToServer_after_dns(const GameStartData *start_data, std::function<void(bool,BaseException*)> resolve);
 	void connectToServer_loop(const GameStartData *start_data, std::function<void(bool,BaseException*)> resolve);
 
         bool could_connect = false;
@@ -1537,18 +1540,31 @@ bool Game::initGui()
 
 void Game::connectToServer(const GameStartData *start_data, std::function<void(bool,BaseException*)> resolve)
 {
-	try { // CATCHALL
-
 	could_connect = false;	// Let's not be overly optimistic
 	connect_aborted = false;
-	bool local_server_mode = false;
+	local_server_mode = false;
 
 	showOverlayMessage(N_("Resolving address..."), 0, 15);
 
-	Address connect_address(0, 0, 0, 0, start_data->socket_port);
+	connect_address.setAddress(0, 0, 0, 0);
+	connect_address.setPort(start_data->socket_port);
 
-	try {
-		connect_address.Resolve(start_data->address.c_str());
+	connect_address.ResolveAsync(start_data->address.c_str(), [this, resolve, start_data](BaseException *exc) {
+		if (exc) {
+			try {
+				exc->reraise();
+			} catch (ResolveError &e) {
+				*error_message = fmtgettext("Couldn't resolve address: %s", e.what());
+
+				errorstream << *error_message << std::endl;
+				resolve(false, nullptr);
+				return;
+			} catch (BaseException &e) {
+				resolve(false, e.copy());
+		                return;
+			}
+			return;
+		}
 
 		if (connect_address.isZero()) { // i.e. INADDR_ANY, IN6ADDR_ANY
 			if (connect_address.isIPv6()) {
@@ -1560,13 +1576,14 @@ void Game::connectToServer(const GameStartData *start_data, std::function<void(b
 			}
 			local_server_mode = true;
 		}
-	} catch (ResolveError &e) {
-		*error_message = fmtgettext("Couldn't resolve address: %s", e.what());
+		connectToServer_after_dns(start_data, resolve);
+	});
+}
 
-		errorstream << *error_message << std::endl;
-		resolve(false, nullptr);
-		return;
-	}
+void Game::connectToServer_after_dns(const GameStartData *start_data, std::function<void(bool,BaseException*)> resolve)
+{
+	try { // CATCHALL
+
 
 	if (connect_address.isIPv6() && !g_settings->getBool("enable_ipv6")) {
 		*error_message = fmtgettext("Unable to connect to %s because IPv6 is disabled", connect_address.serializeString().c_str());

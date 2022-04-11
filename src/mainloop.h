@@ -3,6 +3,8 @@
 #include <functional>
 #include <pthread.h>
 
+using AsyncPayload = std::function<std::function<void()>()>;
+
 class MainLoop {
   public:
 	MainLoop() = delete;
@@ -10,6 +12,7 @@ class MainLoop {
 	static void init();
 	static void run_forever();
 	static void next_frame(std::function<void()> callback);
+	static void RunAsyncThenResume(AsyncPayload payload);
 	static void reenter();
 	static void reenter_blessed();
 	static void play();
