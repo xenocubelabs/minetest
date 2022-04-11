@@ -35,6 +35,34 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 using namespace irr::core;
 
+#define DRAW_WITH_BUFFER(_mbarray, _mbindex, _vertices, _nvertices, _indices, _ntriangles) \
+do { \
+	size_t _mbindexval = (size_t)(_mbindex); \
+	assert(_mbindexval >= 0 && _mbindexval < sizeof(_mbarray)/sizeof(_mbarray[0])); \
+	draw_with_buffer(driver, _mbarray[_mbindexval], (_vertices), (_nvertices), (_indices), (_ntriangles)); \
+} while (0)
+
+static void draw_with_buffer(
+		video::IVideoDriver *driver,
+		irr_ptr<scene::SMeshBuffer> &mb,
+		const video::S3DVertex *vertices,
+		int nvertices,
+		const u16 *indices,
+		int ntriangles)
+{
+	if (!mb) {
+		mb.reset(new scene::SMeshBuffer());
+	}
+	mb->Vertices.set_used(nvertices);
+	memcpy(mb->Vertices.pointer(), vertices, nvertices * sizeof(video::S3DVertex));
+
+	mb->Indices.set_used(3 * ntriangles);
+	memcpy(mb->Indices.pointer(), indices, 3 * ntriangles * sizeof(u16));
+
+	mb->setDirty();
+	driver->drawMeshBuffer(mb.get());
+}
+
 static video::SMaterial baseMaterial()
 {
 	video::SMaterial mat;
@@ -232,7 +260,7 @@ void Sky::render()
 						vertex.Pos.rotateXZBy(180);
 					}
 				}
-				driver->drawIndexedTriangleList(&vertices[0], 4, indices, 2);
+				DRAW_WITH_BUFFER(m_skybox, j-5, &vertices[0], 4, indices, 2);
 			}
 		}
 
@@ -258,7 +286,7 @@ void Sky::render()
 						// Switch from -Z (south) to +Z (north)
 						vertex.Pos.rotateXZBy(-180);
 				}
-				driver->drawIndexedTriangleList(&vertices[0], 4, indices, 2);
+				DRAW_WITH_BUFFER(m_fog1, j, &vertices[0], 4, indices, 2);
 			}
 		}
 
@@ -289,7 +317,7 @@ void Sky::render()
 					// Switch from -Z (south) to -X (west)
 					vertex.Pos.rotateXZBy(-90);
 			}
-			driver->drawIndexedTriangleList(&vertices[0], 4, indices, 2);
+			DRAW_WITH_BUFFER(m_glow, 0, &vertices[0], 4, indices, 2);
 		}
 
 		// Draw sun
@@ -325,7 +353,7 @@ void Sky::render()
 						// Switch from -Z (south) to +Z (north)
 						vertex.Pos.rotateXZBy(-180);
 				}
-				driver->drawIndexedTriangleList(&vertices[0], 4, indices, 2);
+				DRAW_WITH_BUFFER(m_fog2, j, &vertices[0], 4, indices, 2);
 			}
 
 			// Draw bottom far cloudy fog thing in front of sun, moon and stars
@@ -334,7 +362,7 @@ void Sky::render()
 			vertices[1] = video::S3DVertex( 1, -1.0, -1, 0, 1, 0, c, o, t);
 			vertices[2] = video::S3DVertex( 1, -1.0, 1, 0, 1, 0, c, o, o);
 			vertices[3] = video::S3DVertex(-1, -1.0, 1, 0, 1, 0, c, t, o);
-			driver->drawIndexedTriangleList(&vertices[0], 4, indices, 2);
+			DRAW_WITH_BUFFER(m_fog3, 0, &vertices[0], 4, indices, 2);
 		}
 	}
 }
@@ -582,7 +610,7 @@ void Sky::draw_sun(video::IVideoDriver *driver, float sunsize, const video::SCol
 		for (int i = 0; i < 4; i++) {
 			draw_sky_body(vertices, -sunsizes[i], sunsizes[i], colors[i]);
 			place_sky_body(vertices, 90, wicked_time_of_day * 360 - 90);
-			driver->drawIndexedTriangleList(&vertices[0], 4, indices, 2);
+			DRAW_WITH_BUFFER(m_sun, i, &vertices[0], 4, indices, 2);
 		}
 	} else {
 		driver->setMaterial(m_materials[3]);
@@ -594,7 +622,7 @@ void Sky::draw_sun(video::IVideoDriver *driver, float sunsize, const video::SCol
 			c = video::SColor(255, 255, 255, 255);
 		draw_sky_body(vertices, -d, d, c);
 		place_sky_body(vertices, 90, wicked_time_of_day * 360 - 90);
-		driver->drawIndexedTriangleList(&vertices[0], 4, indices, 2);
+		DRAW_WITH_BUFFER(m_sun2, 0, &vertices[0], 4, indices, 2);
 	}
 }
 
@@ -635,7 +663,7 @@ void Sky::draw_moon(video::IVideoDriver *driver, float moonsize, const video::SC
 		for (int i = 0; i < 4; i++) {
 			draw_sky_body(vertices, moonsizes_1[i], moonsizes_2[i], colors[i]);
 			place_sky_body(vertices, -90, wicked_time_of_day * 360 - 90);
-			driver->drawIndexedTriangleList(&vertices[0], 4, indices, 2);
+			DRAW_WITH_BUFFER(m_moon, i, &vertices[0], 4, indices, 2);
 		}
 	} else {
 		driver->setMaterial(m_materials[4]);
@@ -647,7 +675,7 @@ void Sky::draw_moon(video::IVideoDriver *driver, float moonsize, const video::SC
 			c = video::SColor(255, 255, 255, 255);
 		draw_sky_body(vertices, -d, d, c);
 		place_sky_body(vertices, -90, wicked_time_of_day * 360 - 90);
-		driver->drawIndexedTriangleList(&vertices[0], 4, indices, 2);
+		DRAW_WITH_BUFFER(m_moon2, 0, &vertices[0], 4, indices, 2);
 	}
 }
 
