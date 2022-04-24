@@ -278,7 +278,7 @@ void ClientLauncher::run_after_launch_game(std::function<void(bool)> resolve, bo
 					return;
 				}
 
-				MainLoop::next_frame([this, resolve]() { run_loop(resolve); });
+				MainLoop::NextFrame([this, resolve]() { run_loop(resolve); });
 				return;
 			}
 
@@ -329,7 +329,7 @@ void ClientLauncher::after_the_game(std::function<void(bool)> resolve) {
 						run_cleanup(resolve);
 						return;
 					}
-					MainLoop::next_frame([this, resolve]() { run_loop(resolve); });
+					MainLoop::NextFrame([this, resolve]() { run_loop(resolve); });
 					return;
 }
 
@@ -596,7 +596,7 @@ void ClientLauncher::main_menu_loop(std::function<void()> resolve) {
 		driver->endScene();
 		// On some computers framerate doesn't seem to be automatically limited
 		//sleep_ms(25);
-		MainLoop::next_frame([this, resolve]() { main_menu_loop(resolve); });
+		MainLoop::NextFrame([this, resolve]() { main_menu_loop(resolve); });
 }
 
 void ClientLauncher::main_menu_after_loop(std::function<void()> resolve) {

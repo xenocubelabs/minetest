@@ -333,7 +333,7 @@ void GUIEngine::run_loop(std::function<void()> resolve) {
 		m_menu->getAndroidUIInput();
 #endif
 
-		MainLoop::next_frame([this, resolve]() { run_loop(resolve); });
+		MainLoop::NextFrame([this, resolve]() { run_loop(resolve); });
 }
 
 /******************************************************************************/

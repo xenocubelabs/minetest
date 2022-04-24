@@ -1206,7 +1206,7 @@ void Game::run_loop(std::function<void(BaseException*)> resolve) {
 		return;
 	}
 
-	MainLoop::next_frame([this, resolve]() { run_loop(resolve); });
+	MainLoop::NextFrame([this, resolve]() { run_loop(resolve); });
 }
 
 
@@ -1711,7 +1711,7 @@ void Game::connectToServer_loop(const GameStartData *start_data, std::function<v
 		return false;
 	}
 */
-	MainLoop::next_frame([this, start_data, resolve]() { connectToServer_loop(start_data, resolve); });
+	MainLoop::NextFrame([this, start_data, resolve]() { connectToServer_loop(start_data, resolve); });
 }
 
 void Game::getServerContent(std::function<void(bool,BaseException*)> resolve)
@@ -1821,7 +1821,7 @@ void Game::getServerContent_loop(std::function<void(bool,BaseException*)> resolv
 		return;
 	}
 
-	MainLoop::next_frame([this, resolve]() { getServerContent_loop(resolve); });
+	MainLoop::NextFrame([this, resolve]() { getServerContent_loop(resolve); });
 }
 
 
