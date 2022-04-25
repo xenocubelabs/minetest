@@ -127,8 +127,11 @@ Particle::~Particle() {
 
 void Particle::OnRegisterSceneNode()
 {
-	if (IsVisible)
+	if (IsVisible) {
 		SceneManager->registerNodeForRendering(this, scene::ESNRP_TRANSPARENT_EFFECT);
+		video::IVideoDriver *driver = SceneManager->getVideoDriver();
+		driver->prepareMeshBuffer(m_meshbuffer);
+	}
 
 	ISceneNode::OnRegisterSceneNode();
 }
@@ -138,7 +141,6 @@ void Particle::render()
 	video::IVideoDriver *driver = SceneManager->getVideoDriver();
 	driver->setMaterial(m_meshbuffer->getMaterial());
 	driver->setTransform(video::ETS_WORLD, AbsoluteTransformation);
-	m_meshbuffer->setDirty();
 	driver->drawMeshBuffer(m_meshbuffer);
 }
 
@@ -254,6 +256,7 @@ void Particle::updateVertices()
 		m_box.addInternalPoint(vertex.Pos);
 		vertex.Pos += m_pos*BS - intToFloat(camera_offset, BS);
 	}
+	m_meshbuffer->setDirty();
 }
 
 /*

@@ -143,6 +143,24 @@ void ClientMap::OnRegisterSceneNode()
 	{
 		SceneManager->registerNodeForRendering(this, scene::ESNRP_SOLID);
 		SceneManager->registerNodeForRendering(this, scene::ESNRP_TRANSPARENT);
+
+		// Prepare meshes
+		video::IVideoDriver* driver = SceneManager->getVideoDriver();
+		for (auto &i : m_drawlist) {
+			MapBlock *block = i.second;
+			MapBlockMesh *mapBlockMesh = block->mesh;
+			if (!mapBlockMesh)
+				continue;
+			for (int layer = 0; layer < MAX_TILE_LAYERS; layer++) {
+				scene::IMesh *mesh = mapBlockMesh->getMesh(layer);
+				assert(mesh);
+				u32 c = mesh->getMeshBufferCount();
+				for (u32 i = 0; i < c; i++) {
+					scene::IMeshBuffer *buf = mesh->getMeshBuffer(i);
+					driver->prepareMeshBuffer(buf);
+				}
+			}
+		}
 	}
 
 	ISceneNode::OnRegisterSceneNode();
