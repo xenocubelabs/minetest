@@ -227,7 +227,7 @@ void main2(int argc, char *argv[], std::function<void(int)> resolve) {
 		errorstream << "Benchmark support is not enabled in this binary. "
 			<< "If you want to enable it, compile project with BUILD_BENCHMARKS=1 flag."
 			<< std::endl;
-		return 1;
+		resolve(1); return;
 #endif
 	}
 #endif // __ANDROID__
