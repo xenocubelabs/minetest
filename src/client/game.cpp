@@ -876,9 +876,9 @@ private:
 	GameRunData runData;
 	Flags m_flags;
 	ProfilerGraph graph;
-        RunStats stats              = { 0 };
-        CameraOrientation cam_view_target  = { 0 };
-        CameraOrientation cam_view  = { 0 };
+        RunStats stats              = {};
+        CameraOrientation cam_view_target  = {};
+        CameraOrientation cam_view  = {};
         FpsControl draw_times;
 	irr::core::dimension2d<u32> previous_screen_size;
 
