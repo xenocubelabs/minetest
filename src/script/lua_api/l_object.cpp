@@ -2084,6 +2084,9 @@ int ObjectRef::l_set_stars(lua_State *L)
 			"scale", star_params.scale);
 	}
 
+	star_params.day_opacity = getfloatfield_default(L, 2,
+		"day_opacity", star_params.day_opacity);
+
 	getServer(L)->setStars(player, star_params);
 	return 0;
 }
@@ -2108,6 +2111,8 @@ int ObjectRef::l_get_stars(lua_State *L)
 	lua_setfield(L, -2, "star_color");
 	lua_pushnumber(L, star_params.scale);
 	lua_setfield(L, -2, "scale");
+	lua_pushnumber(L, star_params.day_opacity);
+	lua_setfield(L, -2, "day_opacity");
 	return 1;
 }
 
@@ -2323,6 +2328,21 @@ int ObjectRef::l_get_lighting(lua_State *L)
 	return 1;
 }
 
+// respawn(self)
+int ObjectRef::l_respawn(lua_State *L)
+{
+	NO_MAP_LOCK_REQUIRED;
+	ObjectRef *ref = checkobject(L, 1);
+	RemotePlayer *player = getplayer(ref);
+	if (player == nullptr)
+		return 0;
+
+	getServer(L)->RespawnPlayer(player->getPeerId());
+	lua_pushboolean(L, true);
+	return 1;
+}
+
+
 ObjectRef::ObjectRef(ServerActiveObject *object):
 	m_object(object)
 {}
@@ -2478,5 +2498,7 @@ luaL_Reg ObjectRef::methods[] = {
 	luamethod(ObjectRef, set_minimap_modes),
 	luamethod(ObjectRef, set_lighting),
 	luamethod(ObjectRef, get_lighting),
+	luamethod(ObjectRef, respawn),
+
 	{0,0}
 };

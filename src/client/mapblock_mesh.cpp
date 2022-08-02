@@ -1021,7 +1021,12 @@ void MapBlockBspTree::buildTree(const std::vector<MeshTriangle> *triangles)
 	for (u32 i = 0; i < triangles->size(); i++)
 		indexes.push_back(i);
 
-	root = buildTree(v3f(1, 0, 0), v3f(85, 85, 85), 40, indexes, 0);
+	if (!indexes.empty()) {
+		// Start in the center of the block with increment of one quarter in each direction
+		root = buildTree(v3f(1, 0, 0), v3f((MAP_BLOCKSIZE + 1) * 0.5f * BS), MAP_BLOCKSIZE * 0.25f * BS, indexes, 0);
+	} else {
+		root = -1;
+	}
 }
 
 /**
@@ -1097,7 +1102,7 @@ s32 MapBlockBspTree::buildTree(v3f normal, v3f origin, float delta, const std::v
 		v3f next_normal = candidate_normal;
 		v3f next_origin = origin + delta * normal;
 		float next_delta = candidate_delta;
-		if (next_delta < 10) {
+		if (next_delta < 5) {
 			const MeshTriangle *candidate = findSplitCandidate(front_list, *triangles);
 			next_normal = candidate->getNormal();
 			next_origin = candidate->centroid;
@@ -1113,7 +1118,7 @@ s32 MapBlockBspTree::buildTree(v3f normal, v3f origin, float delta, const std::v
 		v3f next_normal = candidate_normal;
 		v3f next_origin = origin - delta * normal;
 		float next_delta = candidate_delta;
-		if (next_delta < 10) {
+		if (next_delta < 5) {
 			const MeshTriangle *candidate = findSplitCandidate(back_list, *triangles);
 			next_normal = candidate->getNormal();
 			next_origin = candidate->centroid;
@@ -1169,7 +1174,7 @@ void PartialMeshBuffer::beforeDraw() const
 void PartialMeshBuffer::afterDraw() const
 {
 	// Take the data back
-	m_vertex_indexes = std::move(m_buffer->Indices.steal());
+	m_vertex_indexes = m_buffer->Indices.steal();
 }
 
 /*
@@ -1349,30 +1354,22 @@ MapBlockMesh::MapBlockMesh(MeshMakeData *data, v3s16 camera_offset):
 
 			scene::SMeshBuffer *buf = new scene::SMeshBuffer();
 			buf->Material = material;
-			switch (p.layer.material_type) {
-			// list of transparent materials taken from tile.h
-			case TILE_MATERIAL_ALPHA:
-			case TILE_MATERIAL_LIQUID_TRANSPARENT:
-			case TILE_MATERIAL_WAVING_LIQUID_TRANSPARENT:
-				{
-					buf->append(&p.vertices[0], p.vertices.size(),
-						&p.indices[0], 0);
+			if (p.layer.isTransparent()) {
+				buf->append(&p.vertices[0], p.vertices.size(), nullptr, 0);
 
-					MeshTriangle t;
-					t.buffer = buf;
-					for (u32 i = 0; i < p.indices.size(); i += 3) {
-						t.p1 = p.indices[i];
-						t.p2 = p.indices[i + 1];
-						t.p3 = p.indices[i + 2];
-						t.updateAttributes();
-						m_transparent_triangles.push_back(t);
-					}
+				MeshTriangle t;
+				t.buffer = buf;
+				m_transparent_triangles.reserve(p.indices.size() / 3);
+				for (u32 i = 0; i < p.indices.size(); i += 3) {
+					t.p1 = p.indices[i];
+					t.p2 = p.indices[i + 1];
+					t.p3 = p.indices[i + 2];
+					t.updateAttributes();
+					m_transparent_triangles.push_back(t);
 				}
-				break;
-			default:
+			} else {
 				buf->append(&p.vertices[0], p.vertices.size(),
 					&p.indices[0], p.indices.size());
-				break;
 			}
 			mesh->addMeshBuffer(buf);
 			buf->drop();

@@ -42,7 +42,7 @@ struct EnumString es_TileAnimationType[] =
 	{TAT_NONE, "none"},
 	{TAT_VERTICAL_FRAMES, "vertical_frames"},
 	{TAT_SHEET_2D, "sheet_2d"},
-	{0, NULL},
+	{0, nullptr},
 };
 
 /******************************************************************************/
@@ -198,7 +198,7 @@ void read_object_properties(lua_State *L, int index,
 		prop->hp_max = (u16)rangelim(hp_max, 0, U16_MAX);
 
 		if (prop->hp_max < sao->getHP()) {
-			PlayerHPChangeReason reason(PlayerHPChangeReason::SET_HP);
+			PlayerHPChangeReason reason(PlayerHPChangeReason::SET_HP_MAX);
 			sao->setHP(prop->hp_max, reason);
 		}
 	}
@@ -550,13 +550,6 @@ void read_content_features(lua_State *L, ContentFeatures &f, int index)
 
 	// tiles = {}
 	lua_getfield(L, index, "tiles");
-	// If nil, try the deprecated name "tile_images" instead
-	if(lua_isnil(L, -1)){
-		lua_pop(L, 1);
-		warn_if_field_exists(L, index, "tile_images",
-				"Deprecated; new name is \"tiles\".");
-		lua_getfield(L, index, "tile_images");
-	}
 	if(lua_istable(L, -1)){
 		int table = lua_gettop(L);
 		lua_pushnil(L);
@@ -613,13 +606,6 @@ void read_content_features(lua_State *L, ContentFeatures &f, int index)
 
 	// special_tiles = {}
 	lua_getfield(L, index, "special_tiles");
-	// If nil, try the deprecated name "special_materials" instead
-	if(lua_isnil(L, -1)){
-		lua_pop(L, 1);
-		warn_if_field_exists(L, index, "special_materials",
-				"Deprecated; new name is \"special_tiles\".");
-		lua_getfield(L, index, "special_materials");
-	}
 	if(lua_istable(L, -1)){
 		int table = lua_gettop(L);
 		lua_pushnil(L);
@@ -1000,22 +986,25 @@ void push_nodebox(lua_State *L, const NodeBox &box)
 			push_aabb3f(L, box.wall_side);
 			lua_setfield(L, -2, "wall_side");
 			break;
-		case NODEBOX_CONNECTED:
+		case NODEBOX_CONNECTED: {
 			lua_pushstring(L, "connected");
 			lua_setfield(L, -2, "type");
-			push_box(L, box.connect_top);
+			const auto &c = box.getConnected();
+			push_box(L, c.connect_top);
 			lua_setfield(L, -2, "connect_top");
-			push_box(L, box.connect_bottom);
+			push_box(L, c.connect_bottom);
 			lua_setfield(L, -2, "connect_bottom");
-			push_box(L, box.connect_front);
+			push_box(L, c.connect_front);
 			lua_setfield(L, -2, "connect_front");
-			push_box(L, box.connect_back);
+			push_box(L, c.connect_back);
 			lua_setfield(L, -2, "connect_back");
-			push_box(L, box.connect_left);
+			push_box(L, c.connect_left);
 			lua_setfield(L, -2, "connect_left");
-			push_box(L, box.connect_right);
+			push_box(L, c.connect_right);
 			lua_setfield(L, -2, "connect_right");
+			// half the boxes are missing here?
 			break;
+		}
 		default:
 			FATAL_ERROR("Invalid box.type");
 			break;
@@ -1048,22 +1037,26 @@ void push_palette(lua_State *L, const std::vector<video::SColor> *palette)
 
 /******************************************************************************/
 void read_server_sound_params(lua_State *L, int index,
-		ServerSoundParams &params)
+		ServerPlayingSound &params)
 {
 	if(index < 0)
 		index = lua_gettop(L) + 1 + index;
-	// Clear
-	params = ServerSoundParams();
+
 	if(lua_istable(L, index)){
+		// Functional overlap: this may modify SimpleSoundSpec contents
+		getfloatfield(L, index, "fade", params.spec.fade);
+		getfloatfield(L, index, "pitch", params.spec.pitch);
+		getboolfield(L, index, "loop", params.spec.loop);
+
 		getfloatfield(L, index, "gain", params.gain);
+
+		// Handle positional information
 		getstringfield(L, index, "to_player", params.to_player);
-		getfloatfield(L, index, "fade", params.fade);
-		getfloatfield(L, index, "pitch", params.pitch);
 		lua_getfield(L, index, "pos");
 		if(!lua_isnil(L, -1)){
 			v3f p = read_v3f(L, -1)*BS;
 			params.pos = p;
-			params.type = ServerSoundParams::SSP_POSITIONAL;
+			params.type = SoundLocation::Position;
 		}
 		lua_pop(L, 1);
 		lua_getfield(L, index, "object");
@@ -1072,13 +1065,12 @@ void read_server_sound_params(lua_State *L, int index,
 			ServerActiveObject *sao = ObjectRef::getobject(ref);
 			if(sao){
 				params.object = sao->getId();
-				params.type = ServerSoundParams::SSP_OBJECT;
+				params.type = SoundLocation::Object;
 			}
 		}
 		lua_pop(L, 1);
 		params.max_hear_distance = BS*getfloatfield_default(L, index,
 				"max_hear_distance", params.max_hear_distance/BS);
-		getboolfield(L, index, "loop", params.loop);
 		getstringfield(L, index, "exclude_player", params.exclude_player);
 	}
 }
@@ -1143,20 +1135,24 @@ NodeBox read_nodebox(lua_State *L, int index)
 	NODEBOXREAD(nodebox.wall_top, "wall_top");
 	NODEBOXREAD(nodebox.wall_bottom, "wall_bottom");
 	NODEBOXREAD(nodebox.wall_side, "wall_side");
-	NODEBOXREADVEC(nodebox.connect_top, "connect_top");
-	NODEBOXREADVEC(nodebox.connect_bottom, "connect_bottom");
-	NODEBOXREADVEC(nodebox.connect_front, "connect_front");
-	NODEBOXREADVEC(nodebox.connect_left, "connect_left");
-	NODEBOXREADVEC(nodebox.connect_back, "connect_back");
-	NODEBOXREADVEC(nodebox.connect_right, "connect_right");
-	NODEBOXREADVEC(nodebox.disconnected_top, "disconnected_top");
-	NODEBOXREADVEC(nodebox.disconnected_bottom, "disconnected_bottom");
-	NODEBOXREADVEC(nodebox.disconnected_front, "disconnected_front");
-	NODEBOXREADVEC(nodebox.disconnected_left, "disconnected_left");
-	NODEBOXREADVEC(nodebox.disconnected_back, "disconnected_back");
-	NODEBOXREADVEC(nodebox.disconnected_right, "disconnected_right");
-	NODEBOXREADVEC(nodebox.disconnected, "disconnected");
-	NODEBOXREADVEC(nodebox.disconnected_sides, "disconnected_sides");
+
+	if (nodebox.type == NODEBOX_CONNECTED) {
+		auto &c = nodebox.getConnected();
+		NODEBOXREADVEC(c.connect_top, "connect_top");
+		NODEBOXREADVEC(c.connect_bottom, "connect_bottom");
+		NODEBOXREADVEC(c.connect_front, "connect_front");
+		NODEBOXREADVEC(c.connect_left, "connect_left");
+		NODEBOXREADVEC(c.connect_back, "connect_back");
+		NODEBOXREADVEC(c.connect_right, "connect_right");
+		NODEBOXREADVEC(c.disconnected_top, "disconnected_top");
+		NODEBOXREADVEC(c.disconnected_bottom, "disconnected_bottom");
+		NODEBOXREADVEC(c.disconnected_front, "disconnected_front");
+		NODEBOXREADVEC(c.disconnected_left, "disconnected_left");
+		NODEBOXREADVEC(c.disconnected_back, "disconnected_back");
+		NODEBOXREADVEC(c.disconnected_right, "disconnected_right");
+		NODEBOXREADVEC(c.disconnected, "disconnected");
+		NODEBOXREADVEC(c.disconnected_sides, "disconnected_sides");
+	}
 
 	return nodebox;
 }
@@ -2146,4 +2142,36 @@ void push_collision_move_result(lua_State *L, const collisionMoveResult &res)
 	}
 	lua_setfield(L, -2, "collisions");
 	/**/
+}
+
+
+void push_mod_spec(lua_State *L, const ModSpec &spec, bool include_unsatisfied)
+{
+	lua_newtable(L);
+
+	lua_pushstring(L, spec.name.c_str());
+	lua_setfield(L, -2, "name");
+
+	lua_pushstring(L, spec.author.c_str());
+	lua_setfield(L, -2, "author");
+
+	lua_pushinteger(L, spec.release);
+	lua_setfield(L, -2, "release");
+
+	lua_pushstring(L, spec.desc.c_str());
+	lua_setfield(L, -2, "description");
+
+	lua_pushstring(L, spec.path.c_str());
+	lua_setfield(L, -2, "path");
+
+	lua_pushstring(L, spec.virtual_path.c_str());
+	lua_setfield(L, -2, "virtual_path");
+
+	lua_newtable(L);
+	int i = 1;
+	for (const auto &dep : spec.unsatisfied_depends) {
+		lua_pushstring(L, dep.c_str());
+		lua_rawseti(L, -2, i++);
+	}
+	lua_setfield(L, -2, "unsatisfied_depends");
 }

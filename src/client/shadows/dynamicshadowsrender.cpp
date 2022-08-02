@@ -70,21 +70,6 @@ ShadowRenderer::~ShadowRenderer()
 		delete m_shadow_mix_cb;
 	m_shadow_node_array.clear();
 	m_light_list.clear();
-
-	if (shadowMapTextureDynamicObjects)
-		m_driver->removeTexture(shadowMapTextureDynamicObjects);
-
-	if (shadowMapTextureFinal)
-		m_driver->removeTexture(shadowMapTextureFinal);
-
-	if (shadowMapTextureColors)
-		m_driver->removeTexture(shadowMapTextureColors);
-
-	if (shadowMapClientMap)
-		m_driver->removeTexture(shadowMapClientMap);
-
-	if (shadowMapClientMapFuture)
-		m_driver->removeTexture(shadowMapClientMapFuture);
 }
 
 void ShadowRenderer::disable()
@@ -93,8 +78,37 @@ void ShadowRenderer::disable()
 	if (shadowMapTextureFinal) {
 		m_driver->setRenderTarget(shadowMapTextureFinal, true, true,
 			video::SColor(255, 255, 255, 255));
-		m_driver->setRenderTarget(0, true, true);
+		m_driver->setRenderTarget(0, false, false);
 	}
+
+	if (shadowMapTextureDynamicObjects) {
+		m_driver->removeTexture(shadowMapTextureDynamicObjects);
+		shadowMapTextureDynamicObjects = nullptr;
+	}
+
+	if (shadowMapTextureFinal) {
+		m_driver->removeTexture(shadowMapTextureFinal);
+		shadowMapTextureFinal = nullptr;
+	}
+
+	if (shadowMapTextureColors) {
+		m_driver->removeTexture(shadowMapTextureColors);
+		shadowMapTextureColors = nullptr;
+	}
+
+	if (shadowMapClientMap) {
+		m_driver->removeTexture(shadowMapClientMap);
+		shadowMapClientMap = nullptr;
+	}
+
+	if (shadowMapClientMapFuture) {
+		m_driver->removeTexture(shadowMapClientMapFuture);
+		shadowMapClientMapFuture = nullptr;
+	}
+
+	for (auto node : m_shadow_node_array)
+		if (node.shadowMode & E_SHADOW_MODE::ESM_RECEIVE)
+			node.node->setMaterialTexture(TEXTURE_LAYER_SHADOW, nullptr);
 }
 
 void ShadowRenderer::initialize()
@@ -163,11 +177,18 @@ void ShadowRenderer::setShadowIntensity(float shadow_intensity)
 void ShadowRenderer::addNodeToShadowList(
 		scene::ISceneNode *node, E_SHADOW_MODE shadowMode)
 {
-	m_shadow_node_array.emplace_back(NodeToApply(node, shadowMode));
+	if (!node)
+		return;
+	m_shadow_node_array.emplace_back(node, shadowMode);
+	if (shadowMode == ESM_RECEIVE || shadowMode == ESM_BOTH)
+		node->setMaterialTexture(TEXTURE_LAYER_SHADOW, shadowMapTextureFinal);
 }
 
 void ShadowRenderer::removeNodeFromShadowList(scene::ISceneNode *node)
 {
+	if (!node)
+		return;
+	node->setMaterialTexture(TEXTURE_LAYER_SHADOW, nullptr);
 	for (auto it = m_shadow_node_array.begin(); it != m_shadow_node_array.end();) {
 		if (it->node == node) {
 			it = m_shadow_node_array.erase(it);
@@ -235,6 +256,10 @@ void ShadowRenderer::updateSMTextures()
 			std::string("shadowmap_final_") + itos(m_shadow_map_texture_size),
 			frt, true);
 		assert(shadowMapTextureFinal != nullptr);
+
+		for (auto &node : m_shadow_node_array)
+			if (node.shadowMode == ESM_RECEIVE || node.shadowMode == ESM_BOTH)
+				node.node->setMaterialTexture(TEXTURE_LAYER_SHADOW, shadowMapTextureFinal);
 	}
 
 	if (!m_shadow_node_array.empty() && !m_light_list.empty()) {
@@ -242,7 +267,7 @@ void ShadowRenderer::updateSMTextures()
 
 		// detect if SM should be regenerated
 		for (DirectionalLight &light : m_light_list) {
-			if (light.should_update_map_shadow) {
+			if (light.should_update_map_shadow || m_force_update_shadow_map) {
 				light.should_update_map_shadow = false;
 				m_current_frame = 0;
 				reset_sm_texture = true;
@@ -271,14 +296,14 @@ void ShadowRenderer::updateSMTextures()
 			// should put some gl* fn here
 
 
-			if (m_current_frame < m_map_shadow_update_frames) {
+			if (m_current_frame < m_map_shadow_update_frames || m_force_update_shadow_map) {
 				m_driver->setRenderTarget(shadowMapTargetTexture, reset_sm_texture, true,
 						video::SColor(255, 255, 255, 255));
 				renderShadowMap(shadowMapTargetTexture, light);
 
 				// Render transparent part in one pass.
 				// This is also handled in ClientMap.
-				if (m_current_frame == m_map_shadow_update_frames - 1) {
+				if (m_current_frame == m_map_shadow_update_frames - 1 || m_force_update_shadow_map) {
 					if (m_shadow_map_colored) {
 						m_driver->setRenderTarget(0, false, false);
 						m_driver->setRenderTarget(shadowMapTextureColors,
@@ -298,7 +323,7 @@ void ShadowRenderer::updateSMTextures()
 			++m_current_frame;
 
 		// pass finished, swap textures and commit light changes
-		if (m_current_frame == m_map_shadow_update_frames) {
+		if (m_current_frame == m_map_shadow_update_frames || m_force_update_shadow_map) {
 			if (shadowMapClientMapFuture != nullptr)
 				std::swap(shadowMapClientMapFuture, shadowMapClientMap);
 
@@ -306,6 +331,7 @@ void ShadowRenderer::updateSMTextures()
 			for (DirectionalLight &light : m_light_list)
 				light.commitFrustum();
 		}
+		m_force_update_shadow_map = false;
 	}
 }
 
@@ -320,6 +346,7 @@ void ShadowRenderer::update(video::ITexture *outputTarget)
 	if (shadowMapTextureFinal == nullptr) {
 		return;
 	}
+
 
 	if (!m_shadow_node_array.empty() && !m_light_list.empty()) {
 
@@ -432,7 +459,10 @@ void ShadowRenderer::renderShadowMap(video::ITexture *target,
 		m_driver->setTransform(video::ETS_WORLD,
 				map_node->getAbsoluteTransformation());
 
-		map_node->renderMapShadows(m_driver, material, pass, m_current_frame, m_map_shadow_update_frames);
+		int frame = m_force_update_shadow_map ? 0 : m_current_frame;
+		int total_frames = m_force_update_shadow_map ? 1 : m_map_shadow_update_frames;
+
+		map_node->renderMapShadows(m_driver, material, pass, frame, total_frames);
 		break;
 	}
 }

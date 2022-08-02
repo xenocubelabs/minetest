@@ -205,7 +205,7 @@ public:
 		Updates usage timers and unloads unused blocks and sectors.
 		Saves modified blocks before unloading if possible.
 	*/
-	void timerUpdate(float dtime, float unload_timeout, u32 max_loaded_blocks,
+	void timerUpdate(float dtime, float unload_timeout, s32 max_loaded_blocks,
 			std::vector<v3s16> *unloaded_blocks=NULL);
 
 	/*
@@ -266,7 +266,7 @@ protected:
 
 	std::set<MapEventReceiver*> m_event_receivers;
 
-	std::map<v2s16, MapSector*> m_sectors;
+	std::unordered_map<v2s16, MapSector*> m_sectors;
 
 	// Be sure to set this to NULL when the cached sector is deleted
 	MapSector *m_sector_cache = nullptr;
