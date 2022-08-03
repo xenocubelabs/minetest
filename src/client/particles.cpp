@@ -332,7 +332,8 @@ void Particle::updateVertices()
 	// particle position is now handled by step()
 	m_box.reset(v3f());
 
-	for (video::S3DVertex &vertex : Vertices) {
+	for (int i = 0; i < 4; i++) {
+		video::S3DVertex &vertex = Vertices[i];
 		if (m_vertical) {
 			v3f ppos = m_player->getPosition()/BS;
 			vertex.Pos.rotateXZBy(std::atan2(ppos.Z - m_pos.Z, ppos.X - m_pos.X) /

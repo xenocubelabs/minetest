@@ -1601,7 +1601,7 @@ void Game::connectToServer_after_dns(const GameStartData *start_data, std::funct
 				*draw_control, texture_src, shader_src,
 				itemdef_manager, nodedef_manager, sound, eventmgr,
 				m_rendering_engine, connect_address.isIPv6(), m_game_ui.get(),
-				start_data.allow_login_or_register);
+				start_data->allow_login_or_register);
 		client->migrateModStorage();
 	} catch (const BaseException &e) {
 		*error_message = fmtgettext("Error creating client: %s", e.what());
