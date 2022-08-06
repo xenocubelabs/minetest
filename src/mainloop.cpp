@@ -9,10 +9,21 @@
 #include <string>
 #include <vector>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <unistd.h>
+
+// libarchive
+#include <archive.h>
+#include <archive_entry.h>
 
 #define MAX_WARNINGS 10
 
 extern "C" {
+    EMSCRIPTEN_KEEPALIVE
+    void emloop_install_pack(const char *name, void *data, size_t size);
+
     EMSCRIPTEN_KEEPALIVE
     void emloop_reenter(void);
 
@@ -94,6 +105,138 @@ void MainLoop::RunAsyncThenResume(AsyncPayload payload) {
 void MainLoop::NextFrame(std::function<void()> resolve) {
     assert(!next_callback);
     next_callback = resolve;
+}
+
+static std::string pathjoin(std::string a, std::string b) {
+    if (a.size() > 0 && a[a.size() - 1] == '/') {
+        return a + b;
+    }
+    return a + "/" + b;
+}
+
+static std::string spaces(size_t count)
+{
+    return std::string(count, ' ');
+}
+
+static void
+debug_list_directory(std::string abspath, size_t depth)
+{
+    if (depth == 0) {
+        std::cout << "Listing directory: " << abspath << std::endl;
+    }
+    struct dirent *ent;
+    DIR *d = opendir(abspath.c_str());
+    if (!d) {
+        std::cout << "opendir(" << abspath << ") failed: " << strerror(errno) << std::endl;
+        return;
+    }
+    while ((ent = readdir(d)) != NULL) {
+        struct stat st;
+        std::string childpath = ent->d_name;
+        if (childpath == "." || childpath == "..") continue;
+        std::string abschildpath = pathjoin(abspath, childpath);
+        if (lstat(abschildpath.c_str(), &st) == -1) {
+            std::cout << "lstat failed on " << abschildpath << std::endl;
+            continue;
+        }
+        std::cout << spaces(depth * 2 + 2) << childpath;
+        if (S_ISDIR(st.st_mode)) {
+            std::cout << std::endl;
+            debug_list_directory(abschildpath, depth + 1);
+        } else if (S_ISREG(st.st_mode)) {
+            std::cout << " (" << st.st_size << " bytes)" << std::endl;
+        } else {
+            std::cout << " (unknown type)" << std::endl;
+        }
+    }
+    closedir(d);
+}
+
+static int
+copy_data(struct archive *ar, struct archive *aw)
+{
+    int r;
+    const void *buff;
+    size_t size;
+    la_int64_t offset;
+
+    for (;;) {
+        r = archive_read_data_block(ar, &buff, &size, &offset);
+        if (r == ARCHIVE_EOF)
+            return ARCHIVE_OK;
+        if (r < ARCHIVE_OK)
+            return r;
+        r = archive_write_data_block(aw, buff, size, offset);
+        if (r < ARCHIVE_OK) {
+            std::cout << "copy_data: " << archive_error_string(aw) << std::endl;
+            return r;
+        }
+    }
+}
+
+// Adapted from https://github.com/libarchive/libarchive/wiki/Examples#a-complete-extractor
+static bool extract_archive(struct archive *a)
+{
+    struct archive *ext = archive_write_disk_new();
+    archive_write_disk_set_options(ext, ARCHIVE_EXTRACT_PERM);
+    archive_write_disk_set_standard_lookup(ext);
+    for (;;) {
+        struct archive_entry *entry;
+        int r = archive_read_next_header(a, &entry);
+        if (r == ARCHIVE_EOF)
+            break;
+        if (r < ARCHIVE_OK)
+            std::cout << "emloop_install_pack: read next header: " << archive_error_string(a) << std::endl;
+        if (r < ARCHIVE_WARN) {
+            std::cout << "emloop_install_pack: Error while expanding pack" << std::endl;
+            return false;
+        }
+        r = archive_write_header(ext, entry);
+        if (r < ARCHIVE_OK)
+            std::cout << "emloop_install_pack: write header: " << archive_error_string(a) << std::endl;
+        else if (archive_entry_size(entry) > 0) {
+            r = copy_data(a, ext);
+            if (r < ARCHIVE_OK)
+                std::cout << "emloop_install_pack: copy_data failed" << std::endl;
+            if (r < ARCHIVE_WARN) {
+                std::cout << "emloop_install_pack: copy_data fatal error" << std::endl;
+                return false;
+            }
+        }
+        r = archive_write_finish_entry(ext);
+        if (r < ARCHIVE_OK)
+            std::cout << "emloop_install_pack: archive_write_finish_entry: " << archive_error_string(ext) << std::endl;
+        if (r < ARCHIVE_WARN) {
+            std::cout << "emloop_install_pack: archive_write_finish_entry fatal error" << std::endl;
+            return false;
+        }
+    }
+    archive_write_close(ext);
+    archive_write_free(ext);
+    return true;
+}
+
+void emloop_install_pack(const char *name, void *data, size_t size) {
+    struct archive *a = archive_read_new();
+    if (archive_read_support_filter_zstd(a) != ARCHIVE_OK) {
+        std::cout << "emloop_install_pack failed: zstd not supported" << std::endl;
+        return;
+    }
+    if (archive_read_support_format_tar(a) != ARCHIVE_OK) {
+        std::cout << "emloop_install_pack failed: tar not supported" << std::endl;
+        return;
+    }
+    if (archive_read_open_memory(a, data, size) != ARCHIVE_OK) {
+        std::cout << "emloop_install_pack failed: invalid archive" << std::endl;
+        return;
+    }
+    if (extract_archive(a)) {
+        std::cout << "emloop_install_pack: Installed " << name << " successfully" << std::endl;
+    }
+    archive_read_close(a);
+    archive_read_free(a);
+    //debug_list_directory("/", 0);
 }
 
 void emloop_reenter_blessed(void) {

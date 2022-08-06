@@ -515,7 +515,6 @@ if(NOT CMAKE_CROSSCOMPILING)
 endif()
 
 if(BUILD_CLIENT)
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --preload-file $ENV{FSROOT_DIR}@/")
 	add_executable(${PROJECT_NAME} ${client_SRCS} ${extra_windows_SRCS})
 	add_dependencies(${PROJECT_NAME} GenerateVersion)
 	target_link_libraries(

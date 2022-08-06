@@ -547,11 +547,15 @@ void ClientLauncher::after_main_menu(std::function<void(bool)> resolve) {
 			resolve(false); return;
 		}
 
-		if (!fs::PathExists(worldspec.path)) {
+		bool mayCreate = skip_main_menu && start_data.isSinglePlayer();
+		bool worldExists = fs::PathExists(worldspec.path);
+		if (!worldExists && !mayCreate) {
 			error_message = gettext("Provided world path doesn't exist: ")
 					+ worldspec.path;
 			errorstream << error_message << std::endl;
 			resolve(false); return;
+		} else if (!worldExists) {
+			loadGameConfAndInitWorld(worldspec.path, worldspec.name, start_data.game_spec, true);
 		}
 
 		// Load gamespec for required game
