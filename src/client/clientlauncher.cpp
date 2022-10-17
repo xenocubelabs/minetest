@@ -105,6 +105,16 @@ ClientLauncher::~ClientLauncher()
 #endif
 */
 
+extern "C" {
+	void preinit_sound(void);
+}
+
+void preinit_sound(void) {
+#if USE_SOUND
+	g_sound_manager_singleton = createSoundManagerSingleton();
+#endif
+}
+
 void ClientLauncher::run(std::function<void(bool)> resolve)
 {
 	/* This function is called when a client must be started.
@@ -116,10 +126,11 @@ void ClientLauncher::run(std::function<void(bool)> resolve)
 
 	init_args(start_data, cmd_args);
 
-#if USE_SOUND
-	if (g_settings->getBool("enable_sound"))
-		g_sound_manager_singleton = createSoundManagerSingleton();
-#endif
+	// Moved to preinit_sound() so that sound can be initialized before pack download
+//#if USE_SOUND
+//	if (g_settings->getBool("enable_sound"))
+//		g_sound_manager_singleton = createSoundManagerSingleton();
+//#endif
 
 	if (!init_engine()) {
 		errorstream << "Could not initialize game engine." << std::endl;
@@ -224,8 +235,9 @@ void ClientLauncher::run(std::function<void(bool)> resolve)
 	*/
 	retval = true;
 	kill = porting::signal_handler_killstatus();
+
 	// HEREHERE
-	run_loop(resolve);
+	MainLoop::NextFrame([this, resolve]() { run_loop(resolve); });
 }
 
 void ClientLauncher::run_loop(std::function<void(bool)> resolve) {

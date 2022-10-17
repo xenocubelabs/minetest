@@ -663,6 +663,9 @@ public:
 			bool *reconnect,
 			ChatBackend *chat_backend,
                         std::function<void(bool,BaseException*)> resolve);
+        void startup_do_init(const GameStartData *start_data,
+                             std::function<void(bool,BaseException*)> resolve);
+
 
 	void run(std::function<void(BaseException*)> resolve);
 	void run_loop(std::function<void(BaseException*)> resolve);
@@ -673,6 +676,7 @@ protected:
 	// Basic initialisation
 	bool init(const std::string &map_dir, const std::string &address,
 			u16 port, const SubgameSpec &gamespec);
+
 	bool initSound();
 	bool createSingleplayerServer(const std::string &map_dir,
 			const SubgameSpec &gamespec, u16 port);
@@ -1076,6 +1080,28 @@ void Game::startup(bool *kill,
 	g_client_translations->clear();
 
 	// address can change if simple_singleplayer_mode
+
+	// CATCHALL
+        } catch (BaseException &exc) {
+		resolve(false, exc.copy());
+		return;
+	}
+
+        //
+        // Pulled forward from init so that the screen isn't empty
+	texture_src = createTextureSource();
+	showOverlayMessage(N_("Loading..."), 0, 0);
+        // Intentionally delay until after redraw
+        MainLoop::DelayNextFrameUntilRedraw();
+        MainLoop::NextFrame([this, start_data, resolve]() {
+            startup_do_init(start_data, resolve);
+        });
+}
+
+void Game::startup_do_init(const GameStartData *start_data,
+                           std::function<void(bool,BaseException*)> resolve)
+{
+	try { // CATCHALL
 	if (!init(start_data->world_spec.path, start_data->address,
 			start_data->socket_port, start_data->game_spec)) {
 		resolve(false, nullptr);
@@ -1277,9 +1303,10 @@ bool Game::init(
 		u16 port,
 		const SubgameSpec &gamespec)
 {
-	texture_src = createTextureSource();
+	// Pulled up one level
+	//texture_src = createTextureSource();
 
-	showOverlayMessage(N_("Loading..."), 0, 0);
+	//showOverlayMessage(N_("Loading..."), 0, 0);
 
 	shader_src = createShaderSource();
 

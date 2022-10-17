@@ -33,12 +33,23 @@ extern "C" {
     EMSCRIPTEN_KEEPALIVE
     void emloop_invoke_main(int argc, char* argv[]);
 
+    EMSCRIPTEN_KEEPALIVE
+    void emloop_pause();
+
+    EMSCRIPTEN_KEEPALIVE
+    void emloop_unpause();
+
+    EMSCRIPTEN_KEEPALIVE
+    void emloop_init_sound();
+
     EM_BOOL irrlicht_want_pointerlock(void);
+    void irrlicht_force_pointerlock(void);
 }
 
 namespace emloop_private {
     std::function<void()> next_callback;
     bool blessed = false;
+    bool paused = false;
     bool invokedMain = false;
     bool busy = false; // executing main
     bool dead = false; // Main exited, or got uncaught exception
@@ -105,6 +116,12 @@ void MainLoop::RunAsyncThenResume(AsyncPayload payload) {
 void MainLoop::NextFrame(std::function<void()> resolve) {
     assert(!next_callback);
     next_callback = resolve;
+}
+
+void MainLoop::DelayNextFrameUntilRedraw() {
+    EM_ASM({
+        emloop_request_animation_frame();
+    });
 }
 
 static std::string pathjoin(std::string a, std::string b) {
@@ -251,7 +268,7 @@ void emloop_reenter_blessed(void) {
 }
 
 void emloop_reenter(void) {
-    if (dead || !invokedMain) {
+    if (dead || !invokedMain || paused) {
         return;
     }
     if (busy) {
@@ -302,6 +319,22 @@ void main_resolve(int rv) {
 }
 
 void main2(int argc, char *argv[], std::function<void(int)> resolve);
+
+void emloop_pause() {
+    paused = true;
+}
+
+void emloop_unpause() {
+    paused = false;
+}
+
+extern "C" {
+    extern void preinit_sound(void);
+}
+
+void emloop_init_sound() {
+    preinit_sound();
+}
 
 void emloop_invoke_main(int argc, char* argv[]) {
     // Caller must guarantee that argv remains valid forever.
