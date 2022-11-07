@@ -100,8 +100,6 @@ void emloop_init() {
         std::cerr << "MainLoop: Failed to launch helper thread" << std::endl;
         abort();
     }
-    emsocket_init();
-    emsocket_set_proxy("wss://minetest.dustlabs.io/proxy");
 }
 
 void MainLoop::RunAsyncThenResume(AsyncPayload payload) {
