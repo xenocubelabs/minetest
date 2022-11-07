@@ -43,6 +43,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "porting.h"
 #include "network/socket.h"
 #include "mapblock.h"
+#include "util/base64.h"
+#include "util/hex.h"
 #if USE_CURSES
 	#include "terminal_chat_console.h"
 #endif
@@ -131,6 +133,19 @@ FileLogOutput file_log_output;
 static OptionList allowed_options;
 
 ClientLauncher *client_launcher;
+
+std::unordered_map<std::string, MediaInfo> warmup_media;
+void do_cache_warmup() {
+	std::cout << "Warming cache" << std::endl;
+	std::string cache_dir = porting::path_cache + DIR_DELIM + "media";
+	fs::CreateAllDirs(cache_dir);
+	for (const auto &kv : warmup_media) {
+		const MediaInfo &info = kv.second;
+		std::string digest = base64_decode(info.sha1_digest);
+		std::string dest = cache_dir + DIR_DELIM + hex_encode(digest.c_str(), 20);
+		fs::CopyFileContents(info.path, dest);
+	}
+}
 
 void main2(int argc, char *argv[], std::function<void(int)> resolve) {
 	debug_set_exception_handler();
@@ -255,6 +270,19 @@ void main2(int argc, char *argv[], std::function<void(int)> resolve) {
 		return;
 	}
 
+	if (cmd_args.getFlag("withserver")) {
+		run_dedicated_server(game_params, cmd_args);
+	}
+
+	if (cmd_args.getFlag("warm")) {
+		// Create a dummy server to initialize but then delete.
+		// This lets us grab the media list.
+		Address bind_addr(0, 0, 0, 0, 65535);
+		Server *server = new Server(game_params.world_path, game_params.game_spec, false, bind_addr, true);
+		warmup_media = server->getMedia();
+		delete server;
+        }
+
 #ifndef SERVER
 	std::cout << "Creating ClientLauncher" << std::endl;
 	client_launcher = new ClientLauncher(game_params, cmd_args);
@@ -347,6 +375,10 @@ static void set_allowed_options(OptionList *allowed_options)
 			_("Enable random user input, for testing"))));
 	allowed_options->insert(std::make_pair("server", ValueSpec(VALUETYPE_FLAG,
 			_("Run dedicated server"))));
+	allowed_options->insert(std::make_pair("withserver", ValueSpec(VALUETYPE_FLAG,
+			_("Run server in addition to client"))));
+	allowed_options->insert(std::make_pair("warm", ValueSpec(VALUETYPE_FLAG,
+			_("Warm cache for specific game"))));
 	allowed_options->insert(std::make_pair("name", ValueSpec(VALUETYPE_STRING,
 			_("Set player name"))));
 	allowed_options->insert(std::make_pair("password", ValueSpec(VALUETYPE_STRING,
@@ -881,6 +913,27 @@ static bool determine_subgame(GameParams *game_params)
 /*****************************************************************************
  * Dedicated server
  *****************************************************************************/
+static bool run_dedicated_server_run(Server *server);
+
+class StepThread : public Thread
+{
+public:
+
+        StepThread(Server *server):
+                Thread("Step"),
+                m_server(server)
+        {}
+
+        virtual void *run() {
+		run_dedicated_server_run(m_server);
+		return nullptr;
+	}
+
+private:
+        Server *m_server;
+};
+
+
 static bool run_dedicated_server(const GameParams &game_params, const Settings &cmd_args)
 {
 	verbosestream << _("Using world path") << " ["
@@ -985,25 +1038,39 @@ static bool run_dedicated_server(const GameParams &game_params, const Settings &
 			<< "compiled without ncurses. Ignoring." << std::endl;
 	} {
 #endif
+		Server *server = new Server(game_params.world_path, game_params.game_spec, false,
+			bind_addr, true);
+		if (cmd_args.getFlag("withserver")) {
+			// Launch in separate thread and return right away
+			auto stepThread = new StepThread(server);
+			stepThread->start();
+			return true;
+		}
+		return run_dedicated_server_run(server);
+	}
+	return true;
+}
+
+static bool run_dedicated_server_run(Server *server) {
+	// Indented to minimize diff
 		try {
 			// Create server
-			Server server(game_params.world_path, game_params.game_spec, false,
-				bind_addr, true);
-			server.start();
+			server->start();
 
 			// Run server
 			bool &kill = *porting::signal_handler_killstatus();
-			dedicated_server_loop(server, kill);
+			dedicated_server_loop(*server, kill);
 
 		} catch (const ModError &e) {
 			errorstream << "ModError: " << e.what() << std::endl;
+			delete server;
 			return false;
 		} catch (const ServerError &e) {
 			errorstream << "ServerError: " << e.what() << std::endl;
+			delete server;
 			return false;
 		}
-	}
-
+	delete server;
 	return true;
 }
 

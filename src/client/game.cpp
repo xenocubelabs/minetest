@@ -1098,10 +1098,17 @@ void Game::startup(bool *kill,
         });
 }
 
+extern void do_cache_warmup();
+
 void Game::startup_do_init(const GameStartData *start_data,
                            std::function<void(bool,BaseException*)> resolve)
 {
 	try { // CATCHALL
+
+	// This could be done in main(), but is instead here so that it happens
+	// after the loading screen is visible (instead of a blank screen)
+	do_cache_warmup();
+
 	if (!init(start_data->world_spec.path, start_data->address,
 			start_data->socket_port, start_data->game_spec)) {
 		resolve(false, nullptr);
