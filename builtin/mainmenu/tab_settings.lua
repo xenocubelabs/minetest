@@ -220,11 +220,19 @@ local function formspec(tabview, name, tabdata)
 			"checkbox[8.25,1.5;cb_waving_leaves;" .. fgettext("Waving Leaves") .. ";"
 					.. dump(core.settings:get_bool("enable_waving_leaves")) .. "]" ..
 			"checkbox[8.25,2;cb_waving_plants;" .. fgettext("Waving Plants") .. ";"
-					.. dump(core.settings:get_bool("enable_waving_plants")) .. "]"..
-			"label[8.25,2.8;" .. fgettext("Dynamic shadows:") .. "]" ..
-			"label[8.25,3.2;" .. fgettext("(game support required)") .. "]" ..
+					.. dump(core.settings:get_bool("enable_waving_plants")) .. "]"
+
+		if video_driver == "opengl" then
+			tab_string = tab_string ..
+				"label[8.25,2.8;" .. fgettext("Dynamic shadows:") .. "]" ..
+				"label[8.25,3.2;" .. fgettext("(game support required)") .. "]" ..
 					"dropdown[8.25,3.7;3.5;dd_shadows;" .. dd_options.shadow_levels[1] .. ";"
 					.. getSettingIndex.ShadowMapping() .. "]"
+		else
+			tab_string = tab_string ..
+				"label[8.38,2.7;" .. core.colorize("#888888",
+					fgettext("Dynamic shadows")) .. "]"
+		end
 	else
 		tab_string = tab_string ..
 			"label[8.38,0.7;" .. core.colorize("#888888",
@@ -298,10 +306,6 @@ local function handle_settings_buttons(this, fields, tabname, tabdata)
 	end
 	if fields["btn_change_keys"] then
 		core.show_keys_menu()
-		return true
-	end
-	if fields["cb_touchscreen_target"] then
-		core.settings:set("touchtarget", fields["cb_touchscreen_target"])
 		return true
 	end
 

@@ -82,12 +82,17 @@ extern "C" {
 #define DEBUGFILE "debug.txt"
 #define DEFAULT_SERVER_PORT 30000
 
+#define ENV_NO_COLOR "NO_COLOR"
+#define ENV_CLICOLOR "CLICOLOR"
+#define ENV_CLICOLOR_FORCE "CLICOLOR_FORCE"
+
 typedef std::map<std::string, ValueSpec> OptionList;
 
 /**********************************************************************
  * Private functions
  **********************************************************************/
 
+static void get_env_opts(Settings &args);
 static bool get_cmdline_opts(int argc, char *argv[], Settings *cmd_args);
 static void set_allowed_options(OptionList *allowed_options);
 
@@ -154,6 +159,7 @@ void main2(int argc, char *argv[], std::function<void(int)> resolve) {
 	g_logger.addOutputMaxLevel(&stderr_output, LL_ACTION);
 
 	Settings &cmd_args = *(new Settings()); // LEAK
+	get_env_opts(cmd_args);
 	bool cmd_args_ok = get_cmdline_opts(argc, argv, &cmd_args);
 	if (!cmd_args_ok
 			|| cmd_args.getFlag("help")
@@ -306,6 +312,29 @@ void main2(int argc, char *argv[], std::function<void(int)> resolve) {
  * Startup / Init
  *****************************************************************************/
 
+
+static void get_env_opts(Settings &args)
+{
+	// CLICOLOR is a de-facto standard option for colors <https://bixense.com/clicolors/>
+	// CLICOLOR != 0: ANSI colors are supported (auto-detection, this is the default)
+	// CLICOLOR == 0: ANSI colors are NOT supported
+	const char *clicolor = std::getenv(ENV_CLICOLOR);
+	if (clicolor && std::string(clicolor) == "0") {
+		args.set("color", "never");
+	}
+	// NO_COLOR only specifies that no color is allowed.
+	// Implemented according to <http://no-color.org/>
+	const char *no_color = std::getenv(ENV_NO_COLOR);
+	if (no_color && no_color[0]) {
+		args.set("color", "never");
+	}
+	// CLICOLOR_FORCE is another option, which should turn on colors "no matter what".
+	const char *clicolor_force = std::getenv(ENV_CLICOLOR_FORCE);
+	if (clicolor_force && std::string(clicolor_force) != "0") {
+		// should ALWAYS have colors, so we ignore tty (no "auto")
+		args.set("color", "always");
+	}
+}
 
 static bool get_cmdline_opts(int argc, char *argv[], Settings *cmd_args)
 {
@@ -497,7 +526,7 @@ static bool setup_log_params(const Settings &cmd_args)
 			color_mode = color_mode_env;
 #endif
 	}
-	if (color_mode != "") {
+	if (!color_mode.empty()) {
 		if (color_mode == "auto") {
 			Logger::color_mode = LOG_COLOR_AUTO;
 		} else if (color_mode == "always") {
@@ -540,7 +569,7 @@ static bool create_userdata_path()
 	}
 #else
 	// Create user data directory
-	success = fs::CreateDir(porting::path_user);
+	success = fs::CreateAllDirs(porting::path_user);
 #endif
 
 	return success;
@@ -599,7 +628,7 @@ static void startup_message()
 static bool read_config_file(const Settings &cmd_args)
 {
 	// Path of configuration file in use
-	sanity_check(g_settings_path == "");	// Sanity check
+	sanity_check(g_settings_path.empty());	// Sanity check
 
 	if (cmd_args.exists("config")) {
 		bool r = g_settings->readConfigFile(cmd_args.get("config").c_str());
@@ -806,7 +835,7 @@ static bool auto_select_world(GameParams *game_params)
 		           << world_path << "]" << std::endl;
 	}
 
-	assert(world_path != "");	// Post-condition
+	assert(!world_path.empty());	// Post-condition
 	game_params->world_path = world_path;
 	return true;
 }
@@ -862,7 +891,7 @@ static bool determine_subgame(GameParams *game_params)
 {
 	SubgameSpec gamespec;
 
-	assert(game_params->world_path != "");	// Pre-condition
+	assert(!game_params->world_path.empty());	// Pre-condition
 
 	// If world doesn't exist
 	if (!game_params->world_path.empty()
@@ -1179,14 +1208,16 @@ static bool recompress_map_database(const GameParams &game_params, const Setting
 		iss.str(data);
 		iss.clear();
 
-		MapBlock mb(nullptr, v3s16(0,0,0), &server);
-		u8 ver = readU8(iss);
-		mb.deSerialize(iss, ver, true);
+		{
+			MapBlock mb(nullptr, v3s16(0,0,0), &server);
+			u8 ver = readU8(iss);
+			mb.deSerialize(iss, ver, true);
 
-		oss.str("");
-		oss.clear();
-		writeU8(oss, serialize_as_ver);
-		mb.serialize(oss, serialize_as_ver, true, -1);
+			oss.str("");
+			oss.clear();
+			writeU8(oss, serialize_as_ver);
+			mb.serialize(oss, serialize_as_ver, true, -1);
+		}
 
 		db->saveBlock(*it, oss.str());
 
