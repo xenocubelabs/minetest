@@ -3,6 +3,7 @@
 #include <emscripten/html5.h>
 #include <cassert>
 #include <iostream>
+#include <fstream>
 #include <emsocketctl.h>
 #include <mutex>
 #include <condition_variable>
@@ -41,6 +42,9 @@ extern "C" {
 
     EMSCRIPTEN_KEEPALIVE
     void emloop_init_sound();
+
+    EMSCRIPTEN_KEEPALIVE
+    void emloop_set_minetest_conf(const char *conf);
 
     EM_BOOL irrlicht_want_pointerlock(void);
     void irrlicht_force_pointerlock(void);
@@ -332,6 +336,15 @@ extern "C" {
 
 void emloop_init_sound() {
     preinit_sound();
+}
+
+void emloop_set_minetest_conf(const char *contents) {
+    std::ofstream os("/minetest/minetest.conf", std::ofstream::trunc);
+    if (!os.good())
+        return;
+    os << contents;
+    os.flush();
+    os.close();
 }
 
 void emloop_invoke_main(int argc, char* argv[]) {
