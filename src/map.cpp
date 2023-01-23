@@ -262,10 +262,7 @@ bool Map::addNodeWithEvent(v3s16 p, MapNode n, bool remove_metadata)
 		std::map<v3s16, MapBlock*> modified_blocks;
 		addNodeAndUpdate(p, n, modified_blocks, remove_metadata);
 
-		// Copy modified_blocks to event
-		for (auto &modified_block : modified_blocks) {
-			event.modified_blocks.insert(modified_block.first);
-		}
+		event.setModifiedBlocks(modified_blocks);
 	}
 	catch(InvalidPositionException &e){
 		succeeded = false;
@@ -287,10 +284,7 @@ bool Map::removeNodeWithEvent(v3s16 p)
 		std::map<v3s16, MapBlock*> modified_blocks;
 		removeNodeAndUpdate(p, modified_blocks);
 
-		// Copy modified_blocks to event
-		for (auto &modified_block : modified_blocks) {
-			event.modified_blocks.insert(modified_block.first);
-		}
+		event.setModifiedBlocks(modified_blocks);
 	}
 	catch(InvalidPositionException &e){
 		succeeded = false;
@@ -695,7 +689,7 @@ void ServerMap::transformLiquids(std::map<v3s16, MapBlock*> &modified_blocks,
 			else
 				new_node_content = floodable_node;
 		} else if (ignored_sources && liquid_level >= 0) {
-			// Maybe there are neighbouring sources that aren't loaded yet
+			// Maybe there are neighboring sources that aren't loaded yet
 			// so prevent flowing away.
 			new_node_level = liquid_level;
 			new_node_content = liquid_kind;
@@ -820,7 +814,7 @@ void ServerMap::transformLiquids(std::map<v3s16, MapBlock*> &modified_blocks,
 		}
 
 		/*
-			enqueue neighbors for update if neccessary
+			enqueue neighbors for update if necessary
 		 */
 		switch (m_nodedef->get(n0.getContent()).liquid_type) {
 			case LIQUID_SOURCE:
@@ -854,7 +848,7 @@ void ServerMap::transformLiquids(std::map<v3s16, MapBlock*> &modified_blocks,
 	env->getScriptIface()->on_liquid_transformed(changed_nodes);
 
 	/* ----------------------------------------------------------------------
-	 * Manage the queue so that it does not grow indefinately
+	 * Manage the queue so that it does not grow indefinitely
 	 */
 	u16 time_until_purge = g_settings->getU16("liquid_queue_purge_time");
 
@@ -1873,10 +1867,7 @@ MapBlock* ServerMap::loadBlock(v3s16 blockpos)
 			//Modified lighting, send event
 			MapEditEvent event;
 			event.type = MEET_OTHER;
-			std::map<v3s16, MapBlock *>::iterator it;
-			for (it = modified_blocks.begin();
-					it != modified_blocks.end(); ++it)
-				event.modified_blocks.insert(it->first);
+			event.setModifiedBlocks(modified_blocks);
 			dispatchEvent(event);
 		}
 	}

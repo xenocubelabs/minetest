@@ -431,7 +431,7 @@ bool setSystemPaths()
 	path_share = exepath + "\\..";
 	if (detectMSVCBuildDir(exepath)) {
 		// The msvc build dir schould normaly not be present if properly installed,
-		// but its usefull for debugging.
+		// but its useful for debugging.
 		path_share += DIR_DELIM "..";
 	}
 
@@ -741,6 +741,38 @@ void attachOrCreateConsole()
 	}
 #endif
 }
+
+#ifdef _WIN32
+std::string QuoteArgv(const std::string &arg)
+{
+	// Quoting rules on Windows are batshit insane, can differ between applications
+	// and there isn't even a stdlib function to deal with it.
+	// Ref: https://learn.microsoft.com/archive/blogs/twistylittlepassagesallalike/everyone-quotes-command-line-arguments-the-wrong-way
+	if (!arg.empty() && arg.find_first_of(" \t\n\v\"") == std::string::npos)
+		return arg;
+
+	std::string ret;
+	ret.reserve(arg.size()+2);
+	ret.push_back('"');
+	for (auto it = arg.begin(); it != arg.end(); ++it) {
+		u32 back = 0;
+		while (it != arg.end() && *it == '\\')
+			++back, ++it;
+
+		if (it == arg.end()) {
+			ret.append(2 * back, '\\');
+			break;
+		} else if (*it == '"') {
+			ret.append(2 * back + 1, '\\');
+		} else {
+			ret.append(back, '\\');
+		}
+		ret.push_back(*it);
+	}
+	ret.push_back('"');
+	return ret;
+}
+#endif
 
 int mt_snprintf(char *buf, const size_t buf_size, const char *fmt, ...)
 {

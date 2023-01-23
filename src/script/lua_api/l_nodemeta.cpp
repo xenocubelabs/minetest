@@ -66,7 +66,7 @@ void NodeMetaRef::reportMetadataChange(const std::string *name)
 
 	MapEditEvent event;
 	event.type = MEET_BLOCK_NODE_METADATA_CHANGED;
-	event.p = m_p;
+	event.setPositionModified(m_p);
 	event.is_private_change = name && meta && meta->isPrivate(*name);
 	m_env->getMap().dispatchEvent(event);
 }
@@ -209,6 +209,7 @@ const luaL_Reg NodeMetaRef::methodsServer[] = {
 	luamethod(MetaDataRef, set_int),
 	luamethod(MetaDataRef, get_float),
 	luamethod(MetaDataRef, set_float),
+	luamethod(MetaDataRef, get_keys),
 	luamethod(MetaDataRef, to_table),
 	luamethod(MetaDataRef, from_table),
 	luamethod(NodeMetaRef, get_inventory),
@@ -230,6 +231,7 @@ const luaL_Reg NodeMetaRef::methodsClient[] = {
 	luamethod(MetaDataRef, get_string),
 	luamethod(MetaDataRef, get_int),
 	luamethod(MetaDataRef, get_float),
+	luamethod(MetaDataRef, get_keys),
 	luamethod(MetaDataRef, to_table),
 	{0,0}
 };
