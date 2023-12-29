@@ -34,7 +34,7 @@ private:
 	 * @param name name of variable to read
 	 * @return string value of requested variable
 	 */
-	static std::string getTextData(lua_State *L, std::string name);
+	static std::string getTextData(lua_State *L, const std::string &name);
 
 	/**
 	 * read an integer variable from gamedata table within lua stack
@@ -42,7 +42,7 @@ private:
 	 * @param name name of variable to read
 	 * @return integer value of requested variable
 	 */
-	static int getIntegerData(lua_State *L, std::string name,bool& valid);
+	static int getIntegerData(lua_State *L, const std::string &name, bool& valid);
 
 	/**
 	 * read a bool variable from gamedata table within lua stack
@@ -50,7 +50,7 @@ private:
 	 * @param name name of variable to read
 	 * @return bool value of requested variable
 	 */
-	static int getBoolData(lua_State *L, std::string name,bool& valid);
+	static int getBoolData(lua_State *L, const std::string &name ,bool& valid);
 
 	/**
 	 * Checks if a path may be modified. Paths in the temp directory or the user
@@ -104,7 +104,13 @@ private:
 
 	static int l_set_formspec_prepend(lua_State *L);
 
-	static int l_get_screen_info(lua_State *L);
+	static int l_get_window_info(lua_State *L);
+
+	static int l_get_active_driver(lua_State *L);
+
+	static int l_get_active_renderer(lua_State *L);
+
+	static int l_get_active_irrlicht_device(lua_State *L);
 
 	//filesystem
 

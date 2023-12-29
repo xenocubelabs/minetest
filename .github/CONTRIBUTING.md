@@ -19,7 +19,7 @@ Contributions are welcome! Here's how you can help:
    developers.
 
    Any Pull Request that isn't a bug fix and isn't covered by
-   [the roadmap](../doc/direction.md) will be closed within a week unless it
+   [the roadmap](../doc/direction.md) will be closed within a month unless it
    receives a concept approval from a Core Developer. For this reason, it is
    recommended that you open an issue for any such pull requests before doing
    the work, to avoid disappointment.
@@ -30,7 +30,7 @@ Contributions are welcome! Here's how you can help:
 
 3. Start coding!
     - Refer to the
-      [Lua API](https://github.com/minetest/minetest/blob/master/doc/lua_api.txt),
+      [Lua API](https://github.com/minetest/minetest/blob/master/doc/lua_api.md),
       [Developer Wiki](http://dev.minetest.net/Main_Page) and other
       [documentation](https://github.com/minetest/minetest/tree/master/doc).
     - Follow the [C/C++](http://dev.minetest.net/Code_style_guidelines) and
@@ -66,20 +66,6 @@ Contributions are welcome! Here's how you can help:
 4. The code's interfaces are well designed, regardless of other aspects that
    might need more work in the future.
 5. It uses protocols and formats which include the required compatibility.
-
-### Important note about automated GitHub checks
-
-When you submit a pull request, GitHub automatically runs checks on the Minetest
-Engine combined with your changes. One of these checks is called 'cpp lint /
-clang format', which checks code formatting. Because formatting for readability
-requires human judgement this check often fails and often makes unsuitable
-formatting requests which make code readability worse.
-
-If this check fails, look at the details to check for any clear mistakes and
-correct those. However, you should not apply everything ClangFormat requests.
-Ignore requests that make code readability worse and any other clearly
-unsuitable requests. Discuss in the pull request with a core developer about how
-to progress.
 
 ## Issues
 

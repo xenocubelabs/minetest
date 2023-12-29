@@ -31,7 +31,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 class Client;
 #endif
 #include "itemgroup.h"
-#include "sound.h" // SimpleSoundSpec
+#include "sound.h" // SoundSpec
 #include "constants.h" // BS
 #include "texture_override.h" // TextureOverride
 #include "tileanimation.h"
@@ -258,7 +258,7 @@ enum AlphaMode : u8 {
 	ALPHAMODE_BLEND,
 	ALPHAMODE_CLIP,
 	ALPHAMODE_OPAQUE,
-	ALPHAMODE_LEGACY_COMPAT, /* means either opaque or clip */
+	ALPHAMODE_LEGACY_COMPAT, /* only sent by old servers, equals OPAQUE */
 };
 
 
@@ -299,7 +299,7 @@ struct TileDef
 
 struct ContentFeatures
 {
-	// PROTOCOL_VERSION >= 37. This is legacy and should not be increased anymore, 
+	// PROTOCOL_VERSION >= 37. This is legacy and should not be increased anymore,
 	// write checks that depend directly on the protocol version instead.
 	static const u8 CONTENTFEATURES_VERSION = 13;
 
@@ -364,6 +364,7 @@ struct ContentFeatures
 	std::vector<content_t> connects_to_ids;
 	// Post effect color, drawn when the camera is inside the node.
 	video::SColor post_effect_color;
+	bool post_effect_color_shaded;
 	// Flowing liquid or leveled nodebox, value = default level
 	u8 leveled;
 	// Maximum value for leveled nodes
@@ -434,9 +435,9 @@ struct ContentFeatures
 
 	// --- SOUND PROPERTIES ---
 
-	SimpleSoundSpec sound_footstep;
-	SimpleSoundSpec sound_dig;
-	SimpleSoundSpec sound_dug;
+	SoundSpec sound_footstep;
+	SoundSpec sound_dig;
+	SoundSpec sound_dug;
 
 	// --- LEGACY ---
 
@@ -465,11 +466,9 @@ struct ContentFeatures
 		case NDT_NORMAL:
 		case NDT_LIQUID:
 		case NDT_FLOWINGLIQUID:
-			alpha = ALPHAMODE_OPAQUE;
-			break;
 		case NDT_NODEBOX:
 		case NDT_MESH:
-			alpha = ALPHAMODE_LEGACY_COMPAT; // this should eventually be OPAQUE
+			alpha = ALPHAMODE_OPAQUE;
 			break;
 		default:
 			alpha = ALPHAMODE_CLIP;
@@ -528,16 +527,6 @@ struct ContentFeatures
 #endif
 
 private:
-#ifndef SERVER
-	/*
-	 * Checks if any tile texture has any transparent pixels.
-	 * Prints a warning and returns true if that is the case, false otherwise.
-	 * This is supposed to be used for use_texture_alpha backwards compatibility.
-	 */
-	bool textureAlphaCheck(ITextureSource *tsrc, const TileDef *tiles,
-		int length);
-#endif
-
 	void setAlphaFromLegacy(u8 legacy_alpha);
 
 	u8 getAlphaForLegacy() const;

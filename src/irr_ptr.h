@@ -19,6 +19,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #pragma once
 #include <type_traits>
+#include <utility>
 #include "irrlichttypes.h"
 #include "IReferenceCounted.h"
 
@@ -143,9 +144,6 @@ public:
 	}
 };
 
-// clang-format off
-// ^ dislikes long lines
-
 /** Constructs a shared pointer as a *secondary* reference to an object
  *
  * This function is intended to make a temporary reference to an object which
@@ -197,4 +195,10 @@ bool operator!=(const ReferenceCounted *a, const irr_ptr<ReferenceCounted> &b) n
 	return a != b.get();
 }
 
-// clang-format on
+/** Same as std::make_unique<T>, but for irr_ptr.
+ */
+template <class T, class... Args>
+irr_ptr<T> make_irr(Args&&... args)
+{
+	return irr_ptr<T>(new T(std::forward<Args>(args)...));
+}

@@ -403,7 +403,7 @@ bool Settings::updateConfigFile(const char *filename)
 
 
 bool Settings::parseCommandLine(int argc, char *argv[],
-		std::map<std::string, ValueSpec> &allowed_options)
+		const std::map<std::string, ValueSpec> &allowed_options)
 {
 	int nonopt_index = 0;
 	for (int i = 1; i < argc; i++) {
@@ -424,8 +424,7 @@ bool Settings::parseCommandLine(int argc, char *argv[],
 
 		std::string name = arg_name.substr(2);
 
-		std::map<std::string, ValueSpec>::iterator n;
-		n = allowed_options.find(name);
+		auto n = allowed_options.find(name);
 		if (n == allowed_options.end()) {
 			errorstream << "Unknown command-line parameter \""
 					<< arg_name << "\"" << std::endl;
@@ -562,13 +561,7 @@ v2f Settings::getV2F(const std::string &name) const
 
 v3f Settings::getV3F(const std::string &name) const
 {
-	v3f value;
-	Strfnd f(get(name));
-	f.next("(");
-	value.X = stof(f.next(","));
-	value.Y = stof(f.next(","));
-	value.Z = stof(f.next(")"));
-	return value;
+	return str_to_v3f(get(name));
 }
 
 

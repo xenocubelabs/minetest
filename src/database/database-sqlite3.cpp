@@ -34,6 +34,7 @@ SQLite format specification:
 #include "porting.h"
 #include "util/string.h"
 #include "remoteplayer.h"
+#include "irrlicht_changes/printing.h"
 #include "server/player_sao.h"
 
 #include <cassert>
@@ -252,7 +253,7 @@ bool MapDatabaseSQLite3::deleteBlock(const v3s16 &pos)
 
 	if (!good) {
 		warningstream << "deleteBlock: Block failed to delete "
-			<< PP(pos) << ": " << sqlite3_errmsg(m_database) << std::endl;
+			<< pos << ": " << sqlite3_errmsg(m_database) << std::endl;
 	}
 	return good;
 }
@@ -941,8 +942,8 @@ void ModStorageDatabaseSQLite3::listMods(std::vector<std::string> *res)
 			return 0;
 		}, (void *) res, &errmsg);
 	if (status != SQLITE_OK) {
-		DatabaseException e(std::string("Error trying to list mods with metadata: ") + errmsg);
+		auto msg = std::string("Error trying to list mods with metadata: ") + errmsg;
 		sqlite3_free(errmsg);
-		throw e;
+		throw DatabaseException(msg);
 	}
 }

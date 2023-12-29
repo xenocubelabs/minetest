@@ -1,8 +1,16 @@
-set(sound_SRCS  ${CMAKE_CURRENT_SOURCE_DIR}/sound.cpp)
+set(sound_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/sound.cpp)
 
 if(USE_SOUND)
 	set(sound_SRCS ${sound_SRCS}
-		${CMAKE_CURRENT_SOURCE_DIR}/sound_openal.cpp)
+		${CMAKE_CURRENT_SOURCE_DIR}/sound/al_helpers.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/sound/ogg_file.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/sound/playing_sound.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/sound/proxy_sound_manager.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/sound/sound_data.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/sound/sound_manager.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/sound/sound_openal.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/sound/sound_singleton.cpp
+	)
 	# On emscripten, OPENAL_INCLUDE_DIR is sysroot/include directory,
 	# and this breaks stdlib when added to -isystem.
 	set(SOUND_INCLUDE_DIRS

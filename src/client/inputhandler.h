@@ -124,6 +124,13 @@ public:
 			push_back(key);
 	}
 
+	void append(const KeyList &other)
+	{
+		for (const KeyPress &key : other) {
+			set(key);
+		}
+	}
+
 	bool operator[](const KeyPress &key) const { return find(key) != end(); }
 };
 
@@ -185,6 +192,12 @@ public:
 		keyWasReleased.clear();
 
 		mouse_wheel = 0;
+	}
+
+	void releaseAllKeys()
+	{
+		keyWasReleased.append(keyIsDown);
+		keyIsDown.clear();
 	}
 
 	void clearWasKeyPressed()
@@ -278,6 +291,7 @@ public:
 	virtual void step(float dtime) {}
 
 	virtual void clear() {}
+	virtual void releaseAllKeys() {}
 
 	JoystickController joystick;
 	KeyCache keycache;
@@ -333,7 +347,11 @@ public:
 				return 0.0f;
 			return 1.0f; // If there is a keyboard event, assume maximum speed
 		}
+#ifdef HAVE_TOUCHSCREENGUI
+		return m_receiver->m_touchscreengui->getMovementSpeed();
+#else
 		return joystick.getMovementSpeed();
+#endif
 	}
 
 	virtual float getMovementDirection()
@@ -353,7 +371,11 @@ public:
 		if (x != 0 || z != 0) /* If there is a keyboard event, it takes priority */
 			return atan2(x, z);
 		else
+#ifdef HAVE_TOUCHSCREENGUI
+			return m_receiver->m_touchscreengui->getMovementDirection();
+#else
 			return joystick.getMovementDirection();
+#endif
 	}
 
 	virtual bool cancelPressed()
@@ -412,6 +434,12 @@ public:
 	{
 		joystick.clear();
 		m_receiver->clearInput();
+	}
+
+	void releaseAllKeys()
+	{
+		joystick.releaseAllKeys();
+		m_receiver->releaseAllKeys();
 	}
 
 private:

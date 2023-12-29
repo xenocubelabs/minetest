@@ -42,7 +42,8 @@ int script_exception_wrapper(lua_State *L, lua_CFunction f)
 	} catch (const char *s) {  // Catch and convert exceptions.
 		lua_pushstring(L, s);
 	} catch (std::exception &e) {
-		lua_pushstring(L, e.what());
+		std::string e_descr = debug_describe_exc(e);
+		lua_pushlstring(L, e_descr.c_str(), e_descr.size());
 	}
 	return lua_error(L);  // Rethrow as a Lua error.
 }
@@ -123,8 +124,10 @@ void script_error(lua_State *L, int pcall_result, const char *mod, const char *f
 
 static void script_log_add_source(lua_State *L, std::string &message, int stack_depth)
 {
-	lua_Debug ar;
+	if (stack_depth <= 0)
+		return;
 
+	lua_Debug ar;
 	if (lua_getstack(L, stack_depth, &ar)) {
 		FATAL_ERROR_IF(!lua_getinfo(L, "Sl", &ar), "lua_getinfo() failed");
 		message.append(" (at " + std::string(ar.short_src) + ":"
@@ -171,18 +174,23 @@ DeprecatedHandlingMode get_deprecated_handling_mode()
 	return ret;
 }
 
-void log_deprecated(lua_State *L, std::string message, int stack_depth)
+void log_deprecated(lua_State *L, std::string message, int stack_depth, bool once)
 {
 	DeprecatedHandlingMode mode = get_deprecated_handling_mode();
 	if (mode == DeprecatedHandlingMode::Ignore)
 		return;
 
-	script_log_add_source(L, message, stack_depth);
-	warningstream << message << std::endl;
+	bool log = true;
+	if (once) {
+		log = script_log_unique(L, message, warningstream, stack_depth);
+	} else {
+		script_log_add_source(L, message, stack_depth);
+		warningstream << message << std::endl;
+	}
 
 	if (mode == DeprecatedHandlingMode::Error)
-		script_error(L, LUA_ERRRUN, NULL, NULL);
-	else
+		script_error(L, LUA_ERRRUN, nullptr, nullptr);
+	else if (log)
 		infostream << script_get_backtrace(L) << std::endl;
 }
 

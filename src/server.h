@@ -27,8 +27,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "content/mods.h"
 #include "inventorymanager.h"
 #include "content/subgames.h"
-#include "tileanimation.h" // TileAnimationParams
-#include "particles.h" // ParticleParams
 #include "network/peerhandler.h"
 #include "network/address.h"
 #include "util/numeric.h"
@@ -38,7 +36,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "serverenvironment.h"
 #include "clientiface.h"
 #include "chatmessage.h"
+#include "sound.h"
 #include "translation.h"
+#include <atomic>
 #include <string>
 #include <list>
 #include <map>
@@ -63,7 +63,7 @@ struct RollbackAction;
 class EmergeManager;
 class ServerScripting;
 class ServerEnvironment;
-struct SimpleSoundSpec;
+struct SoundSpec;
 struct CloudParams;
 struct SkyboxParams;
 struct SunParams;
@@ -74,6 +74,8 @@ class ServerThread;
 class ServerModManager;
 class ServerInventoryManager;
 struct PackedValue;
+struct ParticleParameters;
+struct ParticleSpawnerParameters;
 
 enum ClientDeletionReason {
 	CDR_LEAVE,
@@ -96,7 +98,7 @@ struct MediaInfo
 	}
 };
 
-// Combines the pure sound (SimpleSoundSpec) with positional information
+// Combines the pure sound (SoundSpec) with positional information
 struct ServerPlayingSound
 {
 	SoundLocation type = SoundLocation::Local;
@@ -110,7 +112,7 @@ struct ServerPlayingSound
 
 	v3f getPos(ServerEnvironment *env, bool *pos_exists) const;
 
-	SimpleSoundSpec spec;
+	SoundSpec spec;
 
 	std::unordered_set<session_t> clients; // peer ids
 };
@@ -149,7 +151,7 @@ public:
 		Address bind_addr,
 		bool dedicated,
 		ChatInterface *iface = nullptr,
-		std::string *on_shutdown_errmsg = nullptr
+		std::string *shutdown_errmsg = nullptr
 	);
 	~Server();
 	DISABLE_CLASS_COPY(Server);
@@ -161,12 +163,12 @@ public:
 
 	void start();
 	void stop();
-	// This is mainly a way to pass the time to the server.
 	// Actual processing is done in another thread.
-	void step(float dtime);
+	// This just checks if there was an error in that thread.
+	void step();
 	// This is run by ServerThread and does the actual processing
-	void AsyncRunStep(bool initial_step=false);
-	void Receive();
+	void AsyncRunStep(float dtime, bool initial_step = false);
+	void Receive(float timeout);
 	PlayerSAO* StageTwoClientInit(session_t peer_id);
 
 	/*
@@ -200,6 +202,7 @@ public:
 	void handleCommand_SrpBytesA(NetworkPacket* pkt);
 	void handleCommand_SrpBytesM(NetworkPacket* pkt);
 	void handleCommand_HaveMedia(NetworkPacket *pkt);
+	void handleCommand_UpdateClientInfo(NetworkPacket *pkt);
 
 	void ProcessData(NetworkPacket *pkt);
 
@@ -296,12 +299,23 @@ public:
 	inline bool isSingleplayer() const
 			{ return m_simple_singleplayer_mode; }
 
+	struct StepSettings {
+		float steplen;
+		bool pause;
+	};
+
+	void setStepSettings(StepSettings spdata) { m_step_settings.store(spdata); }
+	StepSettings getStepSettings() { return m_step_settings.load(); }
+
 	inline void setAsyncFatalError(const std::string &error)
 			{ m_async_fatal_error.set(error); }
 	inline void setAsyncFatalError(const LuaError &e)
 	{
 		setAsyncFatalError(std::string("Lua: ") + e.what());
 	}
+
+	// Not thread-safe.
+	void addShutdownError(const ModError &e);
 
 	bool showFormspec(const char *name, const std::string &formspec, const std::string &formname);
 	Map & getMap() { return m_env->getMap(); }
@@ -320,7 +334,7 @@ public:
 
 	void setLocalPlayerAnimations(RemotePlayer *player, v2s32 animation_frames[4],
 			f32 frame_speed);
-	void setPlayerEyeOffset(RemotePlayer *player, const v3f &first, const v3f &third);
+	void setPlayerEyeOffset(RemotePlayer *player, const v3f &first, const v3f &third, const v3f &third_front);
 
 	void setSky(RemotePlayer *player, const SkyboxParams &params);
 	void setSun(RemotePlayer *player, const SunParams &params);
@@ -346,6 +360,7 @@ public:
 	void DisconnectPeer(session_t peer_id);
 	bool getClientConInfo(session_t peer_id, con::rtt_stat_type type, float *retval);
 	bool getClientInfo(session_t peer_id, ClientInfo &ret);
+	const ClientDynamicInfo *getClientDynamicInfo(session_t peer_id);
 
 	void printToConsoleOnly(const std::string &text);
 
@@ -382,11 +397,14 @@ public:
 	static bool migrateModStorageDatabase(const GameParams &game_params,
 			const Settings &cmd_args);
 
+	static u16 getProtocolVersionMin();
+	static u16 getProtocolVersionMax();
+
 	// Lua files registered for init of async env, pair of modname + path
 	std::vector<std::pair<std::string, std::string>> m_async_init_files;
 
-	// Data transferred into async envs at init time
-	std::unique_ptr<PackedValue> m_async_globals_data;
+	// Data transferred into other Lua envs at init time
+	std::unique_ptr<PackedValue> m_lua_globals_data;
 
 	// Bind address
 	Address m_bind_addr;
@@ -450,7 +468,7 @@ private:
 
 	void SendLocalPlayerAnimations(session_t peer_id, v2s32 animation_frames[4],
 		f32 animation_speed);
-	void SendEyeOffset(session_t peer_id, v3f first, v3f third);
+	void SendEyeOffset(session_t peer_id, v3f first, v3f third, v3f third_front);
 	void SendPlayerPrivileges(session_t peer_id);
 	void SendPlayerInventoryFormspec(session_t peer_id);
 	void SendPlayerFormspecPrepend(session_t peer_id);
@@ -620,10 +638,8 @@ private:
 	/*
 		Threads
 	*/
-	// A buffer for time steps
-	// step() increments and AsyncRunStep() run by m_thread reads it.
-	float m_step_dtime = 0.0f;
-	std::mutex m_step_dtime_mutex;
+	// Set by Game
+	std::atomic<StepSettings> m_step_settings{{0.1f, false}};
 
 	// The server mainly operates in this thread
 	ServerThread *m_thread = nullptr;
@@ -657,9 +673,9 @@ private:
 	ChatInterface *m_admin_chat;
 	std::string m_admin_nick;
 
-	// if a mod-error occurs in the on_shutdown callback, the error message will
-	// be written into this
-	std::string *const m_on_shutdown_errmsg;
+	// If a mod error occurs while shutting down, the error message will be
+	// written into this.
+	std::string *const m_shutdown_errmsg;
 
 	/*
 		Map edit event queue. Automatically receives all map edits.
@@ -694,7 +710,7 @@ private:
 		Sounds
 	*/
 	std::unordered_map<s32, ServerPlayingSound> m_playing_sounds;
-	s32 m_next_sound_id = 0; // positive values only
+	s32 m_playing_sounds_id_last_used = 0; // positive values only
 	s32 nextSoundId();
 
 	ModStorageDatabase *m_mod_storage_database = nullptr;

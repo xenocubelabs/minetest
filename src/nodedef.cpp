@@ -403,9 +403,9 @@ void ContentFeatures::reset()
 	waving = 0;
 	legacy_facedir_simple = false;
 	legacy_wallmounted = false;
-	sound_footstep = SimpleSoundSpec();
-	sound_dig = SimpleSoundSpec("__group");
-	sound_dug = SimpleSoundSpec();
+	sound_footstep = SoundSpec();
+	sound_dig = SoundSpec("__group");
+	sound_dug = SoundSpec();
 	connects_to.clear();
 	connects_to_ids.clear();
 	connect_sides = 0;
@@ -415,12 +415,11 @@ void ContentFeatures::reset()
 	node_dig_prediction = "air";
 	move_resistance = 0;
 	liquid_move_physics = false;
+	post_effect_color_shaded = false;
 }
 
 void ContentFeatures::setAlphaFromLegacy(u8 legacy_alpha)
 {
-	// No special handling for nodebox/mesh here as it doesn't make sense to
-	// throw warnings when the server is too old to support the "correct" way
 	switch (drawtype) {
 	case NDT_NORMAL:
 		alpha = legacy_alpha == 255 ? ALPHAMODE_OPAQUE : ALPHAMODE_CLIP;
@@ -529,9 +528,9 @@ void ContentFeatures::serialize(std::ostream &os, u16 protocol_version) const
 	collision_box.serialize(os, protocol_version);
 
 	// sound
-	sound_footstep.serialize(os, protocol_version);
-	sound_dig.serialize(os, protocol_version);
-	sound_dug.serialize(os, protocol_version);
+	sound_footstep.serializeSimple(os, protocol_version);
+	sound_dig.serializeSimple(os, protocol_version);
+	sound_dug.serializeSimple(os, protocol_version);
 
 	// legacy
 	writeU8(os, legacy_facedir_simple);
@@ -543,6 +542,7 @@ void ContentFeatures::serialize(std::ostream &os, u16 protocol_version) const
 	writeU8(os, alpha);
 	writeU8(os, move_resistance);
 	writeU8(os, liquid_move_physics);
+	writeU8(os, post_effect_color_shaded);
 }
 
 void ContentFeatures::deSerialize(std::istream &is, u16 protocol_version)
@@ -626,9 +626,9 @@ void ContentFeatures::deSerialize(std::istream &is, u16 protocol_version)
 	collision_box.deSerialize(is);
 
 	// sounds
-	sound_footstep.deSerialize(is, protocol_version);
-	sound_dig.deSerialize(is, protocol_version);
-	sound_dug.deSerialize(is, protocol_version);
+	sound_footstep.deSerializeSimple(is, protocol_version);
+	sound_dig.deSerializeSimple(is, protocol_version);
+	sound_dug.deSerializeSimple(is, protocol_version);
 
 	// read legacy properties
 	legacy_facedir_simple = readU8(is);
@@ -646,6 +646,8 @@ void ContentFeatures::deSerialize(std::istream &is, u16 protocol_version)
 		if (is.eof())
 			throw SerializationError("");
 		alpha = static_cast<enum AlphaMode>(tmp);
+		if (alpha == ALPHAMODE_LEGACY_COMPAT)
+			alpha = ALPHAMODE_OPAQUE;
 
 		tmp = readU8(is);
 		if (is.eof())
@@ -656,6 +658,11 @@ void ContentFeatures::deSerialize(std::istream &is, u16 protocol_version)
 		if (is.eof())
 			throw SerializationError("");
 		liquid_move_physics = tmp;
+
+		tmp = readU8(is);
+		if (is.eof())
+			throw SerializationError("");
+		post_effect_color_shaded = tmp;
 	} catch(SerializationError &e) {};
 }
 
@@ -742,55 +749,6 @@ static void fillTileAttribs(ITextureSource *tsrc, TileLayer *layer,
 	}
 }
 
-bool ContentFeatures::textureAlphaCheck(ITextureSource *tsrc, const TileDef *tiles, int length)
-{
-	video::IVideoDriver *driver = RenderingEngine::get_video_driver();
-	static thread_local bool long_warning_printed = false;
-	std::set<std::string> seen;
-
-	for (int i = 0; i < length; i++) {
-		if (seen.find(tiles[i].name) != seen.end())
-			continue;
-		seen.insert(tiles[i].name);
-
-		// Load the texture and see if there's any transparent pixels
-		video::ITexture *texture = tsrc->getTexture(tiles[i].name);
-		video::IImage *image = driver->createImage(texture,
-			core::position2d<s32>(0, 0), texture->getOriginalSize());
-		if (!image)
-			continue;
-		core::dimension2d<u32> dim = image->getDimension();
-		bool ok = true;
-		for (u16 x = 0; x < dim.Width; x++) {
-			for (u16 y = 0; y < dim.Height; y++) {
-				if (image->getPixel(x, y).getAlpha() < 255) {
-					ok = false;
-					goto break_loop;
-				}
-			}
-		}
-
-break_loop:
-		image->drop();
-		if (ok)
-			continue;
-		warningstream << "Texture \"" << tiles[i].name << "\" of "
-			<< name << " has transparency, assuming "
-			"use_texture_alpha = \"clip\"." << std::endl;
-		if (!long_warning_printed) {
-			warningstream << "  This warning can be a false-positive if "
-				"unused pixels in the texture are transparent. However if "
-				"it is meant to be transparent, you *MUST* update the "
-				"nodedef and set use_texture_alpha = \"clip\"! This "
-				"compatibility code will be removed in a few releases."
-				<< std::endl;
-			long_warning_printed = true;
-		}
-		return true;
-	}
-	return false;
-}
-
 bool isWorldAligned(AlignStyle style, WorldAlignMode mode, NodeDrawType drawtype)
 {
 	if (style == ALIGN_STYLE_WORLD)
@@ -833,11 +791,6 @@ void ContentFeatures::updateTextures(ITextureSource *tsrc, IShaderSource *shdsrc
 	}
 
 	bool is_liquid = false;
-
-	if (alpha == ALPHAMODE_LEGACY_COMPAT) {
-		// Before working with the alpha mode, resolve any legacy kludges
-		alpha = textureAlphaCheck(tsrc, tdef, 6) ? ALPHAMODE_CLIP : ALPHAMODE_OPAQUE;
-	}
 
 	MaterialType material_type = alpha == ALPHAMODE_OPAQUE ?
 		TILE_MATERIAL_OPAQUE : (alpha == ALPHAMODE_CLIP ? TILE_MATERIAL_BASIC :
@@ -1729,22 +1682,46 @@ bool NodeDefManager::nodeboxConnects(MapNode from, MapNode to,
 				f2.param_type_2 == CPT2_4DIR ||
 				f2.param_type_2 == CPT2_COLORED_4DIR)
 				&& (connect_face >= 4)) {
-			static const u8 rot[33 * 4] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-				0, 0, 0, 0, 4, 32, 16, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-				0, // 4 - back
-				8, 4, 32, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-				0, // 8 - right
-				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 8, 4, 32, 0,
-				0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-				0, // 16 - front
-				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-				0, 0, 0, 0, 0, 0, 32, 16, 8, 4 // 32 - left
-				};
+			static const u8 rot[33 * 4] = {
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				4, 32, 16, 8, // 4 - back
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				8, 4, 32, 16, // 8 - right
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				16, 8, 4, 32, // 16 - front
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				32, 16, 8, 4 // 32 - left
+			};
 			if (f2.param_type_2 == CPT2_FACEDIR ||
 					f2.param_type_2 == CPT2_COLORED_FACEDIR) {
+				// FIXME: support arbitrary rotations (to.param2 & 0x1F) (#7696)
 				return (f2.connect_sides
-					& rot[(connect_face * 4) + (to.param2 & 0x1F)]);
+					& rot[(connect_face * 4) + (to.param2 & 0x03)]);
 			} else if (f2.param_type_2 == CPT2_4DIR ||
 					f2.param_type_2 == CPT2_COLORED_4DIR) {
 				return (f2.connect_sides

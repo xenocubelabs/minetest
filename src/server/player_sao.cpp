@@ -121,14 +121,14 @@ std::string PlayerSAO::getClientInitializationData(u16 protocol_version)
 	msg_os << serializeString32(getPropertyPacket()); // message 1
 	msg_os << serializeString32(generateUpdateArmorGroupsCommand()); // 2
 	msg_os << serializeString32(generateUpdateAnimationCommand()); // 3
-	for (const auto &bone_pos : m_bone_position) {
-		msg_os << serializeString32(generateUpdateBonePositionCommand(
-			bone_pos.first, bone_pos.second.X, bone_pos.second.Y)); // 3 + N
+	for (const auto &it : m_bone_override) {
+		msg_os << serializeString32(generateUpdateBoneOverrideCommand(
+			it.first, it.second)); // 3 + N
 	}
-	msg_os << serializeString32(generateUpdateAttachmentCommand()); // 4 + m_bone_position.size
-	msg_os << serializeString32(generateUpdatePhysicsOverrideCommand()); // 5 + m_bone_position.size
+	msg_os << serializeString32(generateUpdateAttachmentCommand()); // 4 + m_bone_override.size
+	msg_os << serializeString32(generateUpdatePhysicsOverrideCommand()); // 5 + m_bone_override.size
 
-	int message_count = 5 + m_bone_position.size();
+	int message_count = 5 + m_bone_override.size();
 
 	for (const auto &id : getAttachmentChildIds()) {
 		if (ServerActiveObject *obj = m_env->getActiveObject(id)) {
@@ -185,6 +185,7 @@ void PlayerSAO::step(float dtime, bool send_recommended)
 	if (!isImmortal() && m_node_hurt_interval.step(dtime, 1.0f)) {
 		u32 damage_per_second = 0;
 		std::string nodename;
+		v3s16 node_pos;
 		// Lowest and highest damage points are 0.1 within collisionbox
 		float dam_top = m_prop.collisionbox.MaxEdge.Y - 0.1f;
 
@@ -198,6 +199,7 @@ void PlayerSAO::step(float dtime, bool send_recommended)
 			if (c.damage_per_second > damage_per_second) {
 				damage_per_second = c.damage_per_second;
 				nodename = c.name;
+				node_pos = p;
 			}
 		}
 
@@ -209,11 +211,12 @@ void PlayerSAO::step(float dtime, bool send_recommended)
 		if (c.damage_per_second > damage_per_second) {
 			damage_per_second = c.damage_per_second;
 			nodename = c.name;
+			node_pos = ptop;
 		}
 
 		if (damage_per_second != 0 && m_hp > 0) {
 			s32 newhp = (s32)m_hp - (s32)damage_per_second;
-			PlayerHPChangeReason reason(PlayerHPChangeReason::NODE_DAMAGE, nodename);
+			PlayerHPChangeReason reason(PlayerHPChangeReason::NODE_DAMAGE, nodename, node_pos);
 			setHP(newhp, reason);
 		}
 	}
@@ -322,6 +325,14 @@ std::string PlayerSAO::generateUpdatePhysicsOverrideCommand() const
 	writeU8(os, !phys.sneak);
 	writeU8(os, !phys.sneak_glitch);
 	writeU8(os, !phys.new_move);
+	// new physics overrides since 5.8.0
+	writeF32(os, phys.speed_climb);
+	writeF32(os, phys.speed_crouch);
+	writeF32(os, phys.liquid_fluidity);
+	writeF32(os, phys.liquid_fluidity_smooth);
+	writeF32(os, phys.liquid_sink);
+	writeF32(os, phys.acceleration_default);
+	writeF32(os, phys.acceleration_air);
 	return os.str();
 }
 
@@ -606,17 +617,36 @@ bool PlayerSAO::checkMovementCheat()
 	float player_max_walk = 0; // horizontal movement
 	float player_max_jump = 0; // vertical upwards movement
 
-	if (m_privs.count("fast") != 0)
-		player_max_walk = m_player->movement_speed_fast; // Fast speed
-	else
-		player_max_walk = m_player->movement_speed_walk; // Normal speed
-	player_max_walk *= m_player->physics_override.speed;
+	float speed_walk   = m_player->movement_speed_walk;
+	float speed_fast   = m_player->movement_speed_fast;
+	float speed_crouch = m_player->movement_speed_crouch * m_player->physics_override.speed_crouch;
+	float speed_climb  = m_player->movement_speed_climb  * m_player->physics_override.speed_climb;
+	speed_walk   *= m_player->physics_override.speed;
+	speed_fast   *= m_player->physics_override.speed;
+	speed_crouch *= m_player->physics_override.speed;
+	speed_climb  *= m_player->physics_override.speed;
+
+	// Get permissible max. speed
+	if (m_privs.count("fast") != 0) {
+		// Fast priv: Get the highest speed of fast, walk or crouch
+		// (it is not forbidden the 'fast' speed is
+		// not actually the fastest)
+		player_max_walk = MYMAX(speed_crouch, speed_fast);
+		player_max_walk = MYMAX(player_max_walk, speed_walk);
+	} else {
+		// Get the highest speed of walk or crouch
+		// (it is not forbidden the 'walk' speed is
+		// lower than the crouch speed)
+		player_max_walk = MYMAX(speed_crouch, speed_walk);
+	}
+
 	player_max_walk = MYMAX(player_max_walk, override_max_H);
 
 	player_max_jump = m_player->movement_speed_jump * m_player->physics_override.jump;
 	// FIXME: Bouncy nodes cause practically unbound increase in Y speed,
 	//        until this can be verified correctly, tolerate higher jumping speeds
 	player_max_jump *= 2.0;
+	player_max_jump = MYMAX(player_max_jump, speed_climb);
 	player_max_jump = MYMAX(player_max_jump, override_max_V);
 
 	// Don't divide by zero!
@@ -634,7 +664,8 @@ bool PlayerSAO::checkMovementCheat()
 	// FIXME: Checking downwards movement is not easily possible currently,
 	//        the server could calculate speed differences to examine the gravity
 	if (d_vert > 0) {
-		// In certain cases (water, ladders) walking speed is applied vertically
+		// In certain cases (swimming, climbing, flying) walking speed is applied
+		// vertically
 		float s = MYMAX(player_max_jump, player_max_walk);
 		required_time = MYMAX(required_time, d_vert / s);
 	}

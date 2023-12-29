@@ -21,6 +21,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "luaentity_sao.h"
 #include "collision.h"
 #include "constants.h"
+#include "inventory.h"
+#include "irrlicht_changes/printing.h"
 #include "player_sao.h"
 #include "scripting_server.h"
 #include "server.h"
@@ -69,8 +71,12 @@ LuaEntitySAO::LuaEntitySAO(ServerEnvironment *env, v3f pos, const std::string &d
 		break;
 	}
 	// create object
-	infostream << "LuaEntitySAO::create(name=\"" << name << "\" state=\""
-			 << state << "\")" << std::endl;
+	infostream << "LuaEntitySAO::create(name=\"" << name << "\" state is";
+	if (state.empty())
+		infostream << "empty";
+	else
+		infostream << state.size() << " bytes";
+	infostream << ")" << std::endl;
 
 	m_init_name = name;
 	m_init_state = state;
@@ -101,7 +107,7 @@ void LuaEntitySAO::addedToEnvironment(u32 dtime_s)
 	if(m_registered){
 		// Get properties
 		m_env->getScriptIface()->
-			luaentity_GetProperties(m_id, this, &m_prop);
+			luaentity_GetProperties(m_id, this, &m_prop, m_init_name);
 		// Initialize HP from properties
 		m_hp = m_prop.hp_max;
 		// Activate entity, supplying serialized state
@@ -139,7 +145,7 @@ void LuaEntitySAO::step(float dtime, bool send_recommended)
 	// If attached, check that our parent is still there. If it isn't, detach.
 	if (m_attachment_parent_id && !isAttached()) {
 		// This is handled when objects are removed from the map
-		warningstream << "LuaEntitySAO::step() id=" << m_id <<
+		warningstream << "LuaEntitySAO::step() " << m_init_name << " at " << m_last_sent_position << ", id=" << m_id <<
 			" is attached to nonexistent parent. This is a bug." << std::endl;
 		clearParentAttachment();
 		sendPosition(false, true);
@@ -250,13 +256,13 @@ std::string LuaEntitySAO::getClientInitializationData(u16 protocol_version)
 	msg_os << serializeString32(getPropertyPacket()); // message 1
 	msg_os << serializeString32(generateUpdateArmorGroupsCommand()); // 2
 	msg_os << serializeString32(generateUpdateAnimationCommand()); // 3
-	for (const auto &bone_pos : m_bone_position) {
-		msg_os << serializeString32(generateUpdateBonePositionCommand(
-			bone_pos.first, bone_pos.second.X, bone_pos.second.Y)); // 3 + N
+	for (const auto &bone_override : m_bone_override) {
+		msg_os << serializeString32(generateUpdateBoneOverrideCommand(
+			bone_override.first, bone_override.second)); // 3 + N
 	}
-	msg_os << serializeString32(generateUpdateAttachmentCommand()); // 4 + m_bone_position.size
+	msg_os << serializeString32(generateUpdateAttachmentCommand()); // 4 + m_bone_override.size
 
-	int message_count = 4 + m_bone_position.size();
+	int message_count = 4 + m_bone_override.size();
 
 	for (const auto &id : getAttachmentChildIds()) {
 		if (ServerActiveObject *obj = m_env->getActiveObject(id)) {
@@ -279,7 +285,6 @@ std::string LuaEntitySAO::getClientInitializationData(u16 protocol_version)
 
 void LuaEntitySAO::getStaticData(std::string *result) const
 {
-	verbosestream<<FUNCTION_NAME<<std::endl;
 	std::ostringstream os(std::ios::binary);
 	// version must be 1 to keep backwards-compatibility. See version2
 	writeU8(os, 1);
@@ -389,7 +394,7 @@ std::string LuaEntitySAO::getDescription()
 	std::ostringstream oss;
 	oss << "LuaEntitySAO \"" << m_init_name << "\" ";
 	auto pos = floatToInt(m_base_position, BS);
-	oss << "at " << PP(pos);
+	oss << "at " << pos;
 	return oss.str();
 }
 
@@ -409,7 +414,7 @@ void LuaEntitySAO::setHP(s32 hp, const PlayerHPChangeReason &reason)
 			m_env->getScriptIface()->luaentity_on_death(m_id, killer);
 		}
 		markForRemoval();
-	}	
+	}
 }
 
 u16 LuaEntitySAO::getHP() const

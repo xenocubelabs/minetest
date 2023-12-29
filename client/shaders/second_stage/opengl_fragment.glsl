@@ -1,12 +1,21 @@
 #define rendered texture0
 #define bloom texture1
 
+#ifdef GL_ES
+// Dithering requires sufficient floating-point precision
+#ifndef GL_FRAGMENT_PRECISION_HIGH
+#undef ENABLE_DITHERING
+#endif
+#endif
+
 struct ExposureParams {
 	float compensationFactor;
 };
 
 uniform sampler2D rendered;
 uniform sampler2D bloom;
+
+uniform vec2 texelSize0;
 
 uniform ExposureParams exposureParams;
 uniform lowp float bloomIntensity;
@@ -18,7 +27,9 @@ varying mediump vec2 varTexCoord;
 centroid varying vec2 varTexCoord;
 #endif
 
-varying float exposure;
+#ifdef ENABLE_AUTO_EXPOSURE
+varying float exposure; // linear exposure factor, see vertex shader
+#endif
 
 #ifdef ENABLE_BLOOM
 
@@ -75,10 +86,32 @@ vec3 applySaturation(vec3 color, float factor)
 }
 #endif
 
+#ifdef ENABLE_DITHERING
+// From http://alex.vlachos.com/graphics/Alex_Vlachos_Advanced_VR_Rendering_GDC2015.pdf
+// and https://www.shadertoy.com/view/MslGR8 (5th one starting from the bottom)
+// NOTE: `frag_coord` is in pixels (i.e. not normalized UV).
+vec3 screen_space_dither(highp vec2 frag_coord) {
+	// Iestyn's RGB dither (7 asm instructions) from Portal 2 X360, slightly modified for VR.
+	highp vec3 dither = vec3(dot(vec2(171.0, 231.0), frag_coord));
+	dither.rgb = fract(dither.rgb / vec3(103.0, 71.0, 97.0));
+
+	// Subtract 0.5 to avoid slightly brightening the whole viewport.
+	return (dither.rgb - 0.5) / 255.0;
+}
+#endif
+
 void main(void)
 {
 	vec2 uv = varTexCoord.st;
+#ifdef ENABLE_SSAA
+	vec4 color = vec4(0.);
+	for (float dx = 1.; dx < SSAA_SCALE; dx += 2.)
+	for (float dy = 1.; dy < SSAA_SCALE; dy += 2.)
+		color += texture2D(rendered, uv + texelSize0 * vec2(dx, dy)).rgba;
+	color /= SSAA_SCALE * SSAA_SCALE / 4.;
+#else
 	vec4 color = texture2D(rendered, uv).rgba;
+#endif
 
 	// translate to linear colorspace (approximate)
 	color.rgb = pow(color.rgb, vec3(2.2));
@@ -87,9 +120,11 @@ void main(void)
 	if (uv.x > 0.5 || uv.y > 0.5)
 #endif
 	{
-		color.rgb *= exposure * exposureParams.compensationFactor;
+		color.rgb *= exposureParams.compensationFactor;
+#ifdef ENABLE_AUTO_EXPOSURE
+		color.rgb *= exposure;
+#endif
 	}
-
 
 #ifdef ENABLE_BLOOM
 	color = applyBloom(color, uv);
@@ -109,6 +144,11 @@ void main(void)
 
 	// return to sRGB colorspace (approximate)
 	color.rgb = pow(color.rgb, vec3(1.0 / 2.2));
+
+#ifdef ENABLE_DITHERING
+	// Apply dithering just before quantisation
+	color.rgb += screen_space_dither(gl_FragCoord.xy);
+#endif
 
 	gl_FragColor = vec4(color.rgb, 1.0); // force full alpha to avoid holes in the image.
 }

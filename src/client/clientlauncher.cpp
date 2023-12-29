@@ -38,7 +38,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "network/networkexceptions.h"
 
 #if USE_SOUND
-	#include "sound_openal.h"
+	#include "sound/sound_openal.h"
 #endif
 
 /* mainmenumanager.h
@@ -149,7 +149,7 @@ void ClientLauncher::run(std::function<void(bool)> resolve)
 		resolve(false); return;
 	}
 
-	m_rendering_engine->setupTopLevelWindow(PROJECT_NAME_C);
+	m_rendering_engine->setupTopLevelWindow();
 
 	/*
 		This changes the minimum allowed number of vertices in a VBO.
@@ -169,19 +169,21 @@ void ClientLauncher::run(std::function<void(bool)> resolve)
 
 	guienv = m_rendering_engine->get_gui_env();
 	skin = guienv->getSkin();
+	skin->setColor(gui::EGDC_WINDOW_SYMBOL, video::SColor(255, 255, 255, 255));
 	skin->setColor(gui::EGDC_BUTTON_TEXT, video::SColor(255, 255, 255, 255));
 	skin->setColor(gui::EGDC_3D_LIGHT, video::SColor(0, 0, 0, 0));
 	skin->setColor(gui::EGDC_3D_HIGH_LIGHT, video::SColor(255, 30, 30, 30));
 	skin->setColor(gui::EGDC_3D_SHADOW, video::SColor(255, 0, 0, 0));
 	skin->setColor(gui::EGDC_HIGH_LIGHT, video::SColor(255, 70, 120, 50));
 	skin->setColor(gui::EGDC_HIGH_LIGHT_TEXT, video::SColor(255, 255, 255, 255));
-#ifdef HAVE_TOUCHSCREENGUI
-	float density = RenderingEngine::getDisplayDensity();
+
+	float density = rangelim(g_settings->getFloat("gui_scaling"), 0.5, 20) *
+		RenderingEngine::getDisplayDensity();
 	skin->setSize(gui::EGDS_CHECK_BOX_WIDTH, (s32)(17.0f * density));
 	skin->setSize(gui::EGDS_SCROLLBAR_SIZE, (s32)(14.0f * density));
 	skin->setSize(gui::EGDS_WINDOW_BUTTON_WIDTH, (s32)(15.0f * density));
 	if (density > 1.5f) {
-		std::string sprite_path = porting::path_user + "/textures/base/pack/";
+		std::string sprite_path = porting::path_share + "/textures/base/pack/";
 		if (density > 3.5f)
 			sprite_path.append("checkbox_64.png");
 		else if (density > 2.0f)
@@ -198,7 +200,7 @@ void ClientLauncher::run(std::function<void(bool)> resolve)
 				skin->setIcon(gui::EGDI_CHECK_BOX_CHECKED, sprite_id);
 		}
 	}
-#endif
+
 	g_fontengine = new FontEngine(guienv);
 	FATAL_ERROR_IF(g_fontengine == NULL, "Font engine creation failed.");
 
@@ -249,12 +251,10 @@ void ClientLauncher::run_loop(std::function<void(bool)> resolve) {
 		}
 
 		// Set the window caption
-		const wchar_t *text = wgettext("Main Menu");
 		m_rendering_engine->get_raw_device()->
 			setWindowCaption((utf8_to_wide(PROJECT_NAME_C) +
 			L" " + utf8_to_wide(g_version_hash) +
-			L" [" + text + L"]").c_str());
-		delete[] text;
+			L" [" + wstrgettext("Main Menu") + L"]").c_str());
 
 		// EXTRA INDENT
 		m_rendering_engine->get_gui_env()->clear();
@@ -439,11 +439,6 @@ void ClientLauncher::launch_game(std::function<void(bool)> resolve)
 		spec.path = start_data.world_path;
 		spec.gameid = getWorldGameId(spec.path, true);
 		spec.name = _("[--world parameter]");
-
-		if (spec.gameid.empty()) {	// Create new
-			spec.gameid = g_settings->get("default_game");
-			spec.name += " [new]";
-		}
 	}
 
 	/* Show the GUI menu
@@ -624,12 +619,8 @@ void ClientLauncher::main_menu_after_loop(std::function<void()> resolve) {
 	m_rendering_engine->get_raw_device()->getCursorControl()->setVisible(true);
 
 	// Set absolute mouse mode
-#if IRRLICHT_VERSION_MT_REVISION >= 9
 	m_rendering_engine->get_raw_device()->getCursorControl()->setRelativeMode(false);
 #endif
-
-#endif
-
 
 	/* show main menu */
 	new GUIEngine(&input->joystick, guiroot, m_rendering_engine, &g_menumgr, menudata_addr, *kill, [this, resolve]() {

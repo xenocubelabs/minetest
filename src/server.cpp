@@ -73,6 +73,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "database/database-files.h"
 #include "database/database-dummy.h"
 #include "gameparams.h"
+#include "particles.h"
+#include "gettext.h"
 
 class ClientNotFoundException : public BaseException
 {
@@ -104,25 +106,33 @@ void *ServerThread::run()
 	/*
 	 * The real business of the server happens on the ServerThread.
 	 * How this works:
-	 * AsyncRunStep() runs an actual server step as soon as enough time has
-	 * passed (dedicated_server_loop keeps track of that).
-	 * Receive() blocks at least(!) 30ms waiting for a packet (so this loop
-	 * doesn't busy wait) and will process any remaining packets.
+	 * AsyncRunStep() (which runs the actual server step) is called at the
+	 * server-step frequency. Receive() is used for waiting between the steps.
 	 */
 
 	try {
-		m_server->AsyncRunStep(true);
+		m_server->AsyncRunStep(0.0f, true);
 	} catch (con::ConnectionBindFailed &e) {
 		m_server->setAsyncFatalError(e.what());
 	} catch (LuaError &e) {
 		m_server->setAsyncFatalError(e);
 	}
 
-	while (!stopRequested()) {
-		try {
-			m_server->AsyncRunStep();
+	float dtime = 0.0f;
 
-			m_server->Receive();
+	while (!stopRequested()) {
+		ScopeProfiler spm(g_profiler, "Server::RunStep() (max)", SPT_MAX);
+
+		u64 t0 = porting::getTimeUs();
+
+		const Server::StepSettings step_settings = m_server->getStepSettings();
+
+		try {
+			m_server->AsyncRunStep(step_settings.pause ? 0.0f : dtime);
+
+			const float remaining_time = step_settings.steplen
+					- 1e-6f * (porting::getTimeUs() - t0);
+			m_server->Receive(remaining_time);
 
 		} catch (con::PeerNotFoundException &e) {
 			infostream<<"Server: PeerNotFoundException"<<std::endl;
@@ -132,6 +142,8 @@ void *ServerThread::run()
 		} catch (LuaError &e) {
 			m_server->setAsyncFatalError(e);
 		}
+
+		dtime = 1e-6f * (porting::getTimeUs() - t0);
 	}
 
 	END_DEBUG_EXCEPTION_HANDLER
@@ -233,7 +245,7 @@ Server::Server(
 		Address bind_addr,
 		bool dedicated,
 		ChatInterface *iface,
-		std::string *on_shutdown_errmsg
+		std::string *shutdown_errmsg
 	):
 	m_bind_addr(bind_addr),
 	m_path_world(path_world),
@@ -252,7 +264,7 @@ Server::Server(
 	m_thread(new ServerThread(this)),
 	m_clients(m_con),
 	m_admin_chat(iface),
-	m_on_shutdown_errmsg(on_shutdown_errmsg),
+	m_shutdown_errmsg(shutdown_errmsg),
 	m_modchannel_mgr(new ModChannelMgr())
 {
 	if (m_path_world.empty())
@@ -351,14 +363,7 @@ Server::~Server()
 		try {
 			m_script->on_shutdown();
 		} catch (ModError &e) {
-			errorstream << "ModError: " << e.what() << std::endl;
-			if (m_on_shutdown_errmsg) {
-				if (m_on_shutdown_errmsg->empty()) {
-					*m_on_shutdown_errmsg = std::string("ModError: ") + e.what();
-				} else {
-					*m_on_shutdown_errmsg += std::string("\nModError: ") + e.what();
-				}
-			}
+			addShutdownError(e);
 		}
 
 		infostream << "Server: Saving environment metadata" << std::endl;
@@ -458,6 +463,8 @@ void Server::init()
 	m_gamespec.checkAndLog();
 	m_modmgr->loadMods(m_script);
 
+	m_script->saveGlobals();
+
 	// Read Textures and calculate sha1 sums
 	fillMediaCache();
 
@@ -550,13 +557,22 @@ void Server::start()
 	m_thread->start();
 
 	// ASCII art for the win!
-	std::cerr
-		<< "         __.               __.                 __.  " << std::endl
-		<< "  _____ |__| ____   _____ /  |_  _____  _____ /  |_ " << std::endl
-		<< " /     \\|  |/    \\ /  __ \\    _\\/  __ \\/   __>    _\\" << std::endl
-		<< "|  Y Y  \\  |   |  \\   ___/|  | |   ___/\\___  \\|  |  " << std::endl
-		<< "|__|_|  /  |___|  /\\______>  |  \\______>_____/|  |  " << std::endl
-		<< "      \\/ \\/     \\/         \\/                  \\/   " << std::endl;
+	const char *art[] = {
+		"         __.               __.                 __.  ",
+		"  _____ |__| ____   _____ /  |_  _____  _____ /  |_ ",
+		" /     \\|  |/    \\ /  __ \\    _\\/  __ \\/   __>    _\\",
+		"|  Y Y  \\  |   |  \\   ___/|  | |   ___/\\___  \\|  |  ",
+		"|__|_|  /  |___|  /\\______>  |  \\______>_____/|  |  ",
+		"      \\/ \\/     \\/         \\/                  \\/   "
+	};
+
+	if (!m_admin_chat) {
+		// we're not printing to rawstream to avoid it showing up in the logs.
+		// however it would then mess up the ncurses terminal (m_admin_chat),
+		// so we skip it in that case.
+		for (auto line : art)
+			std::cerr << line << std::endl;
+	}
 	actionstream << "World at [" << m_path_world << "]" << std::endl;
 	actionstream << "Server for gameid=\"" << m_gamespec.id
 			<< "\" listening on ";
@@ -575,15 +591,8 @@ void Server::stop()
 	infostream<<"Server: Threads stopped"<<std::endl;
 }
 
-void Server::step(float dtime)
+void Server::step()
 {
-	// Limit a bit
-	if (dtime > 2.0)
-		dtime = 2.0;
-	{
-		MutexAutoLock lock(m_step_dtime_mutex);
-		m_step_dtime += dtime;
-	}
 	// Throw if fatal error occurred in thread
 	std::string async_err = m_async_fatal_error.get();
 	if (!async_err.empty()) {
@@ -596,29 +605,17 @@ void Server::step(float dtime)
 	}
 }
 
-void Server::AsyncRunStep(bool initial_step)
+void Server::AsyncRunStep(float dtime, bool initial_step)
 {
-
-	float dtime;
-	{
-		MutexAutoLock lock1(m_step_dtime_mutex);
-		dtime = m_step_dtime;
-	}
-
 	{
 		// Send blocks to clients
 		SendBlocks(dtime);
 	}
 
-	if((dtime < 0.001) && !initial_step)
+	if ((dtime < 0.001f) && !initial_step)
 		return;
 
 	ScopeProfiler sp(g_profiler, "Server::AsyncRunStep()", SPT_AVG);
-
-	{
-		MutexAutoLock lock1(m_step_dtime_mutex);
-		m_step_dtime -= dtime;
-	}
 
 	/*
 		Update uptime
@@ -673,6 +670,11 @@ void Server::AsyncRunStep(bool initial_step)
 			std::max(g_settings->getFloat("server_unload_unused_data_timeout"), 0.0f),
 			-1);
 	}
+
+	/*
+		Note: Orphan MapBlock ptrs become dangling after this call.
+	*/
+	m_env->getServerMap().step();
 
 	/*
 		Listen to the admin chat, if available
@@ -1044,25 +1046,27 @@ void Server::AsyncRunStep(bool initial_step)
 	m_shutdown_state.tick(dtime, this);
 }
 
-void Server::Receive()
+void Server::Receive(float timeout)
 {
+	const u64 t0 = porting::getTimeUs();
+	const float timeout_us = timeout * 1e6f;
+	auto remaining_time_us = [&]() -> float {
+		return std::max(0.0f, timeout_us - (porting::getTimeUs() - t0));
+	};
+
 	NetworkPacket pkt;
 	session_t peer_id;
-	bool first = true;
 	for (;;) {
 		pkt.clear();
 		peer_id = 0;
 		try {
-			/*
-				In the first iteration *wait* for a packet, afterwards process
-				all packets that are immediately available (no waiting).
-			*/
-			if (first) {
-				m_con->Receive(&pkt);
-				first = false;
-			} else {
-				if (!m_con->TryReceive(&pkt))
-					return;
+			if (!m_con->ReceiveTimeoutMs(&pkt,
+					(u32)remaining_time_us() / 1000)) {
+				// No incoming data.
+				// Already break if there's 1ms left, as ReceiveTimeoutMs is too coarse
+				// and a faster server-step is better than busy waiting.
+				if (remaining_time_us() < 1000.0f)
+					break;
 			}
 
 			peer_id = pkt.getPeerId();
@@ -1081,8 +1085,6 @@ void Server::Receive()
 			DenyAccess(peer_id, SERVER_ACCESSDENIED_UNEXPECTED_DATA);
 		} catch (const con::PeerNotFoundException &e) {
 			// Do nothing
-		} catch (const con::NoIncomingDataException &e) {
-			return;
 		}
 	}
 }
@@ -1311,6 +1313,17 @@ bool Server::getClientInfo(session_t peer_id, ClientInfo &ret)
 	return true;
 }
 
+const ClientDynamicInfo *Server::getClientDynamicInfo(session_t peer_id)
+{
+	ClientInterface::AutoLock clientlock(m_clients);
+	RemoteClient *client = m_clients.lockedGetClientNoEx(peer_id, CS_Invalid);
+
+	if (!client)
+		return nullptr;
+
+	return &client->getDynamicInfo();
+}
+
 void Server::handlePeerChanges()
 {
 	while(!m_peer_change_queue.empty())
@@ -1536,10 +1549,13 @@ void Server::SendShowFormspecMessage(session_t peer_id, const std::string &forms
 {
 	NetworkPacket pkt(TOCLIENT_SHOW_FORMSPEC, 0, peer_id);
 	if (formspec.empty()){
-		//the client should close the formspec
-		//but make sure there wasn't another one open in meantime
+		// The client should close the formspec
+		// But make sure there wasn't another one open in meantime
+		// If the formname is empty, any open formspec will be closed so the
+		// form name should always be erased from the state.
 		const auto it = m_formspec_state_data.find(peer_id);
-		if (it != m_formspec_state_data.end() && it->second == formname) {
+		if (it != m_formspec_state_data.end() &&
+				(it->second == formname || formname.empty())) {
 			m_formspec_state_data.erase(peer_id);
 		}
 		pkt.putLongString("");
@@ -1612,8 +1628,9 @@ void Server::SendAddParticleSpawner(session_t peer_id, u16 protocol_version,
 		) / 4.0f * BS;
 		const float radius_sq = radius * radius;
 		/* Don't send short-lived spawners to distant players.
-		 * This could be replaced with proper tracking at some point. */
-		const bool distance_check = !attached_id && p.time <= 1.0f;
+		 * This could be replaced with proper tracking at some point.
+		 * A lifetime of 0 means that the spawner exists forever.*/
+		const bool distance_check = !attached_id && p.time <= 1.0f && p.time != 0.0f;
 
 		for (const session_t client_id : clients) {
 			RemotePlayer *player = m_env->getPlayer(client_id);
@@ -1638,7 +1655,18 @@ void Server::SendAddParticleSpawner(session_t peer_id, u16 protocol_version,
 	NetworkPacket pkt(TOCLIENT_ADD_PARTICLESPAWNER, 100, peer_id);
 
 	pkt << p.amount << p.time;
-	{ // serialize legacy fields
+
+	if (protocol_version >= 42) {
+		// Serialize entire thing
+		std::ostringstream os(std::ios_base::binary);
+		p.pos.serialize(os);
+		p.vel.serialize(os);
+		p.acc.serialize(os);
+		p.exptime.serialize(os);
+		p.size.serialize(os);
+		pkt.putRawString(os.str());
+	} else {
+		// serialize legacy fields only (compatibility)
 		std::ostringstream os(std::ios_base::binary);
 		p.pos.start.legacySerialize(os);
 		p.vel.start.legacySerialize(os);
@@ -1661,21 +1689,23 @@ void Server::SendAddParticleSpawner(session_t peer_id, u16 protocol_version,
 	pkt << p.node.param0 << p.node.param2 << p.node_tile;
 
 	{ // serialize new fields
-		// initial bias for older properties
-		pkt << p.pos.start.bias
-			<< p.vel.start.bias
-			<< p.acc.start.bias
-			<< p.exptime.start.bias
-			<< p.size.start.bias;
-
 		std::ostringstream os(std::ios_base::binary);
+		if (protocol_version < 42) {
+			// initial bias for older properties
+			pkt << p.pos.start.bias
+				<< p.vel.start.bias
+				<< p.acc.start.bias
+				<< p.exptime.start.bias
+				<< p.size.start.bias;
 
-		// final tween frames of older properties
-		p.pos.end.serialize(os);
-		p.vel.end.serialize(os);
-		p.acc.end.serialize(os);
-		p.exptime.end.serialize(os);
-		p.size.end.serialize(os);
+			// final tween frames of older properties
+			p.pos.end.serialize(os);
+			p.vel.end.serialize(os);
+			p.acc.end.serialize(os);
+			p.exptime.end.serialize(os);
+			p.size.end.serialize(os);
+		}
+		// else: fields are already written by serialize() very early
 
 		// properties for legacy texture field
 		p.texture.serialize(os, protocol_version, true);
@@ -1816,6 +1846,9 @@ void Server::SendSetSky(session_t peer_id, const SkyboxParams &params)
 				<< params.sky_color.night_sky << params.sky_color.night_horizon
 				<< params.sky_color.indoors;
 		}
+
+		pkt << params.body_orbit_tilt;
+		pkt << params.fog_distance << params.fog_start;
 	}
 
 	Send(&pkt);
@@ -1883,6 +1916,8 @@ void Server::SendSetLighting(session_t peer_id, const Lighting &lighting)
 			<< lighting.exposure.speed_dark_bright
 			<< lighting.exposure.speed_bright_dark
 			<< lighting.exposure.center_weight_power;
+
+	pkt << lighting.volumetric_light_strength;
 
 	Send(&pkt);
 }
@@ -1955,10 +1990,10 @@ void Server::SendLocalPlayerAnimations(session_t peer_id, v2s32 animation_frames
 	Send(&pkt);
 }
 
-void Server::SendEyeOffset(session_t peer_id, v3f first, v3f third)
+void Server::SendEyeOffset(session_t peer_id, v3f first, v3f third, v3f third_front)
 {
 	NetworkPacket pkt(TOCLIENT_EYE_OFFSET, 0, peer_id);
-	pkt << first << third;
+	pkt << first << third << third_front;
 	Send(&pkt);
 }
 
@@ -2136,12 +2171,19 @@ void Server::SendPlayerSpeed(session_t peer_id, const v3f &added_vel)
 
 inline s32 Server::nextSoundId()
 {
-	s32 ret = m_next_sound_id;
-	if (m_next_sound_id == INT32_MAX)
-		m_next_sound_id = 0; // signed overflow is undefined
-	else
-		m_next_sound_id++;
-	return ret;
+	s32 free_id = m_playing_sounds_id_last_used;
+	do {
+		if (free_id == INT32_MAX)
+			free_id = 0; // signed overflow is undefined
+		else
+			free_id++;
+
+		if (free_id == m_playing_sounds_id_last_used)
+			return 0;
+	} while (free_id == 0 || m_playing_sounds.find(free_id) != m_playing_sounds.end());
+
+	m_playing_sounds_id_last_used = free_id;
+	return free_id;
 }
 
 s32 Server::playSound(ServerPlayingSound &params, bool ephemeral)
@@ -2197,13 +2239,15 @@ s32 Server::playSound(ServerPlayingSound &params, bool ephemeral)
 
 	// old clients will still use this, so pick a reserved ID (-1)
 	const s32 id = ephemeral ? -1 : nextSoundId();
+	if (id == 0)
+		return 0;
 
 	float gain = params.gain * params.spec.gain;
 	NetworkPacket pkt(TOCLIENT_PLAY_SOUND, 0);
 	pkt << id << params.spec.name << gain
 			<< (u8) params.type << pos << params.object
 			<< params.spec.loop << params.spec.fade << params.spec.pitch
-			<< ephemeral;
+			<< ephemeral << params.spec.start_time;
 
 	bool as_reliable = !ephemeral;
 
@@ -2488,7 +2532,7 @@ bool Server::addMediaFile(const std::string &filename,
 {
 	// If name contains illegal characters, ignore the file
 	if (!string_allowed(filename, TEXTURENAME_ALLOWED_CHARS)) {
-		infostream << "Server: ignoring illegal file name: \""
+		warningstream << "Server: ignoring file as it has disallowed characters: \""
 				<< filename << "\"" << std::endl;
 		return false;
 	}
@@ -2520,6 +2564,13 @@ bool Server::addMediaFile(const std::string &filename,
 		errorstream << "Server::addMediaFile(): Empty file \""
 				<< filepath << "\"" << std::endl;
 		return false;
+	}
+
+	const char *deprecated_ext[] = { ".bmp", nullptr };
+	if (!removeStringEnd(filename, deprecated_ext).empty())
+	{
+		warningstream << "Media file \"" << filename << "\" is using a"
+			" deprecated format and will stop working in the future." << std::endl;
 	}
 
 	SHA1 sha1;
@@ -3379,12 +3430,13 @@ void Server::setLocalPlayerAnimations(RemotePlayer *player,
 	SendLocalPlayerAnimations(player->getPeerId(), animation_frames, frame_speed);
 }
 
-void Server::setPlayerEyeOffset(RemotePlayer *player, const v3f &first, const v3f &third)
+void Server::setPlayerEyeOffset(RemotePlayer *player, const v3f &first, const v3f &third, const v3f &third_front)
 {
 	sanity_check(player);
 	player->eye_offset_first = first;
 	player->eye_offset_third = third;
-	SendEyeOffset(player->getPeerId(), first, third);
+	player->eye_offset_third_front = third_front;
+	SendEyeOffset(player->getPeerId(), first, third, third_front);
 }
 
 void Server::setSky(RemotePlayer *player, const SkyboxParams &params)
@@ -3728,6 +3780,23 @@ std::string Server::getBuiltinLuaPath()
 	return porting::path_share + DIR_DELIM + "builtin";
 }
 
+// Not thread-safe.
+void Server::addShutdownError(const ModError &e)
+{
+	// DO NOT TRANSLATE the `ModError`, it's used by `ui.lua`
+	std::string msg = fmtgettext("%s while shutting down: ", "ModError") +
+			e.what() + strgettext("\nCheck debug.txt for details.");
+	errorstream << msg << std::endl;
+
+	if (m_shutdown_errmsg) {
+		if (m_shutdown_errmsg->empty()) {
+			*m_shutdown_errmsg = msg;
+		} else {
+			*m_shutdown_errmsg += "\n\n" + msg;
+		}
+	}
+}
+
 v3f Server::findSpawnPos()
 {
 	ServerMap &map = m_env->getServerMap();
@@ -3882,21 +3951,24 @@ void dedicated_server_loop(Server &server, bool &kill)
 
 	IntervalLimiter m_profiler_interval;
 
-	static thread_local const float steplen =
-			g_settings->getFloat("dedicated_server_step");
-	static thread_local const float profiler_print_interval =
-			g_settings->getFloat("profiler_print_interval");
+	constexpr float steplen = 0.05f; // always 50 ms
+	const float profiler_print_interval = g_settings->getFloat("profiler_print_interval");
+
+	server.setStepSettings(Server::StepSettings{
+			g_settings->getFloat("dedicated_server_step"),
+			false
+		});
 
 	/*
-	 * The dedicated server loop only does time-keeping (in Server::step) and
-	 * provides a way to main.cpp to kill the server externally (bool &kill).
+	 * The dedicated server loop only provides a way to main.cpp to kill the
+	 * server externally (bool &kill).
 	 */
 
 	for(;;) {
 		// This is kind of a hack but can be done like this
 		// because server.step() is very light
-		sleep_ms((int)(steplen*1000.0));
-		server.step(steplen);
+		sleep_ms((int)(steplen*1000.0f));
+		server.step();
 
 		if (server.isShutdownRequested() || kill)
 			break;
@@ -4121,4 +4193,21 @@ bool Server::migrateModStorageDatabase(const GameParams &game_params, const Sett
 	}
 
 	return succeeded;
+}
+
+u16 Server::getProtocolVersionMin()
+{
+	u16 min_proto = g_settings->getU16("protocol_version_min");
+	if (g_settings->getBool("strict_protocol_version_checking"))
+		min_proto = LATEST_PROTOCOL_VERSION;
+	return rangelim(min_proto,
+		SERVER_PROTOCOL_VERSION_MIN,
+		SERVER_PROTOCOL_VERSION_MAX);
+}
+
+u16 Server::getProtocolVersionMax()
+{
+	return g_settings->getBool("strict_protocol_version_checking")
+		? LATEST_PROTOCOL_VERSION
+		: SERVER_PROTOCOL_VERSION_MAX;
 }
