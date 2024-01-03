@@ -30,6 +30,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <ostream>
 #include <cstring>
+#include <functional>
 #include "irrlichttypes.h"
 #include "networkexceptions.h"
 

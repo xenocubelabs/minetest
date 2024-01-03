@@ -1016,7 +1016,8 @@ private:
         CameraOrientation cam_view_target  = {};
         CameraOrientation cam_view  = {};
         FpsControl draw_times;
-	irr::core::dimension2d<u32> previous_screen_size;
+	irr::core::dimension2d<u32> initial_screen_size;
+	bool initial_window_maximized;
 
 
 	/* 'cache'
@@ -4364,7 +4365,7 @@ void Game::updateFrame(f32 dtime,
 		==================== Drawing begins ====================
 	*/
 	if (RenderingEngine::shouldRender())
-		drawScene(graph, stats);
+		drawScene(&graph, &stats);
 	/*
 		==================== End scene ====================
 	*/

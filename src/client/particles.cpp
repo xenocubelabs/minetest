@@ -72,6 +72,16 @@ Particle::Particle(
 		m_parent(parent),
 		m_owned_texture(std::move(owned_texture))
 {
+
+	// Mesh Buffer
+	m_meshbuffer = new scene::SMeshBuffer();
+	core::array<u16>& Indices = m_meshbuffer->Indices;
+	Indices.set_used(6);
+	u16 indices[] = {0,1,2, 2,3,0};
+	for (int i = 0; i < 6; i++) {
+		Indices[i] = indices[i];
+	}
+
 	// Set material
 	{
 		// translate blend modes to GL blend functions
@@ -106,6 +116,8 @@ Particle::Particle(
 				blendop = video::EBO_ADD;
 			break;
 		}
+
+		video::SMaterial& m_material = m_meshbuffer->getMaterial();
 
 		// Texture
 		m_material.Lighting = false;
@@ -214,7 +226,7 @@ void Particle::step(float dtime)
 		m_animation_time += dtime;
 		int frame_length_i, frame_count;
 		m_p.animation.determineParams(
-				m_material.getTexture(0)->getSize(),
+				m_meshbuffer->getMaterial().getTexture(0)->getSize(),
 				&frame_count, &frame_length_i, NULL);
 		float frame_length = frame_length_i / 1000.0;
 		while (m_animation_time > frame_length) {

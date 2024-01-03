@@ -261,7 +261,7 @@ void GUIEngine::run(std::function<void()> resolve)
 				fog_end, fog_density, fog_pixelfog, fog_rangefog);
 	}
 
-    initial_screen_size = irr::core::dimension2d<u32>(
+	initial_screen_size = irr::core::dimension2d<u32>(
 			g_settings->getU16("screen_w"),
 			g_settings->getU16("screen_h")
 		);

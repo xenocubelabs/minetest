@@ -106,14 +106,14 @@ void Clouds::render()
 
 	ScopeProfiler sp(g_profiler, "Clouds::render()", SPT_AVG);
 
-	video::SMaterial& mat = m_meshbuffer->getMaterial();
+	video::SMaterial& m_material = m_meshbuffer->getMaterial();
 
 	int num_faces_to_draw = m_enable_3d ? 6 : 1;
 
 	m_material.BackfaceCulling = m_enable_3d;
 
 	driver->setTransform(video::ETS_WORLD, AbsoluteTransformation);
-	driver->setMaterial(mat);
+	driver->setMaterial(m_material);
 
 	/*
 		Clouds move from Z+ towards Z-

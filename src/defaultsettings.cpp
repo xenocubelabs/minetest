@@ -207,7 +207,7 @@ void set_default_settings()
 	settings->setDefault("lighting_boost_spread", "0.2");
 	settings->setDefault("texture_path", "");
 	settings->setDefault("shader_path", "");
-	settings->setDefault("video_driver", "");
+	settings->setDefault("video_driver", "webgl1");
 	settings->setDefault("cinematic", "false");
 	settings->setDefault("camera_smoothing", "0.0");
 	settings->setDefault("cinematic_camera_smoothing", "0.7");
@@ -348,7 +348,7 @@ void set_default_settings()
 
 	settings->setDefault("update_information_url", "https://www.minetest.net/release_info.json");
 #if ENABLE_UPDATE_CHECKER
-	settings->setDefault("update_last_checked", "");
+	settings->setDefault("update_last_checked", "disabled");
 #else
 	settings->setDefault("update_last_checked", "disabled");
 #endif

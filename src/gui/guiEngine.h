@@ -176,7 +176,11 @@ private:
 	void run_loop(std::function<void()> resolve);
 	video::IVideoDriver *driver;
 	unsigned int text_height;
-	irr::core::dimension2d<u32> previous_screen_size;
+	irr::core::dimension2d<u32> initial_screen_size;
+	bool initial_window_maximized;
+	u64 t_last_frame;
+	f32 dtime;
+
         video::SColor sky_color;
         MenuMusicFetcher soundfetcher;
 

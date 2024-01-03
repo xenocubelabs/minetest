@@ -294,6 +294,7 @@ std::vector<video::E_DRIVER_TYPE> RenderingEngine::getSupportedVideoDrivers()
 		video::EDT_OPENGL,
 		video::EDT_OGLES2,
 		video::EDT_OGLES1,
+		video::EDT_WEBGL1,
 		video::EDT_NULL,
 	};
 	std::vector<video::E_DRIVER_TYPE> drivers;
