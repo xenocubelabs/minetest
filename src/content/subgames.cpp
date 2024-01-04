@@ -17,6 +17,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
+#include <unordered_set>
 #include <common/c_internal.h>
 #include "content/subgames.h"
 #include "porting.h"
@@ -414,6 +415,43 @@ void loadGameConfAndInitWorld(const std::string &path, const std::string &name,
 		MapSettingsManager mgr(map_meta_path);
 
 		mgr.setMapSetting("seed", g_settings->get("fixed_map_seed"));
+
+		/////
+		Settings gameconf;
+		std::string gameconf_path = gamespec.path + DIR_DELIM "game.conf";
+		gameconf.readConfigFile(gameconf_path.c_str());
+		// in order of preference, copied from g_reg_mapgens
+		std::vector<std::string> all_mapgens = {
+			"v7", "valleys", "carpathian", "v5", "flat", "fractal", "singlenode", "v6"
+		};
+		std::unordered_set<std::string> allowed_mapgens;
+		std::unordered_set<std::string> disallowed_mapgens;
+		if (gameconf.exists("disallowed_mapgens")) {
+			for (const auto &s : split(gameconf.get("disallowed_mapgens"), ',')) {
+				disallowed_mapgens.insert(trim(s));
+			}
+		}
+		if (gameconf.exists("allowed_mapgens")) {
+			for (const auto &s : split(gameconf.get("allowed_mapgens"), ',')) {
+				allowed_mapgens.insert(trim(s));
+			}
+		}
+		// Use the first acceptable mapgen
+		std::string mg_name = "";
+		for (const auto &mg : all_mapgens) {
+			bool allowed = allowed_mapgens.empty() || allowed_mapgens.count(mg) > 0;
+			bool disallowed = disallowed_mapgens.count(mg) > 0;
+			if (allowed && !disallowed) {
+				mg_name = mg;
+				break;
+			}
+		}
+		if (mg_name.empty()) {
+			throw BaseException("Unable to find suitable mapgen");
+		}
+		mgr.setMapSetting("mg_name", mg_name);
+		/////
+
 
 		mgr.makeMapgenParams();
 		mgr.saveMapMeta();
