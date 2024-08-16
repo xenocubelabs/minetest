@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <string>
 #include <vector>
+#include "gui/mainmenumanager.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -34,7 +35,10 @@ extern "C" {
     EMSCRIPTEN_KEEPALIVE
     void emloop_invoke_main(int argc, char* argv[]);
 
-    EMSCRIPTEN_KEEPALIVE
+	EMSCRIPTEN_KEEPALIVE
+	void emloop_request_shutdown();
+
+	EMSCRIPTEN_KEEPALIVE
     void emloop_pause();
 
     EMSCRIPTEN_KEEPALIVE
@@ -318,6 +322,10 @@ void emloop_reenter(void) {
 
 void main_resolve(int rv) {
     std::cout << "main() exited with return value " << rv << std::endl;
+
+	EM_ASM({
+		emloop_shutdown($0);
+	}, rv);
 }
 
 void main2(int argc, char *argv[], std::function<void(int)> resolve);
@@ -362,6 +370,10 @@ void emloop_invoke_main(int argc, char* argv[]) {
     blessed = false;
 }
 
+void emloop_request_shutdown() {
+	g_gamecallback->exitToOS();
+}
+
 int main(int argc, char *argv[])
 {
     std::cout << "ENTERED main()" << std::endl;
@@ -382,4 +394,5 @@ int main(int argc, char *argv[])
     std::cout << "THIS SHOULD BE UNREACHABLE" << std::endl;
     return 0;
 }
+
 
